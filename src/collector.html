@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>教师数据收集器 | 科技社团云展</title>
+    <link rel="stylesheet" href="./collector.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>科技社团云展数据收集器</h1>
+      <p>面向非技术教师：中文字段、自动推荐、一步一步填即可。</p>
+      <div class="top-actions">
+        <a class="btn" href="./index.html">返回云展首页</a>
+        <button id="loadBtn" class="btn btn-light" type="button">读取当前基础数据</button>
+      </div>
+      <p id="status" class="status">准备就绪</p>
+    </header>
+
+    <main>
+      <section class="card tabs">
+        <button class="tab is-active" data-tab="club">1. 新增社团信息</button>
+        <button class="tab" data-tab="artifact">2. 新增学员成果</button>
+        <button class="tab" data-tab="media">3. 新增素材绑定</button>
+      </section>
+
+      <section id="tab-club" class="card panel is-active">
+        <h2>社团信息（club_profile）</h2>
+        <p class="hint">带 <span class="req">*</span> 为必填。系统可自动生成 `社团ID`。</p>
+        <div class="grid">
+          <label>社团ID <span class="req">*</span>
+            <div class="inline">
+              <input id="club_id" placeholder="例如 C001" />
+              <button type="button" data-gen="club_id">推荐生成</button>
+            </div>
+          </label>
+          <label>社团名称 <span class="req">*</span><input id="club_name" placeholder="例如 智能编程社" /></label>
+          <label>执教教师 <span class="req">*</span><input id="teacher" placeholder="例如 张老师" /></label>
+          <label>面向年级<input id="grade_range" placeholder="例如 四-六年级" /></label>
+          <label>学员人数<input id="student_count" type="number" min="0" placeholder="例如 36" /></label>
+          <label>展馆类别<input id="club_category" placeholder="例如 智能编程馆" /></label>
+          <label>社团简介<textarea id="intro" placeholder="建议 50-120 字"></textarea></label>
+          <label>本学期学了什么<textarea id="learned_topics" placeholder="可用分号分隔，例如 逻辑;调试;建模"></textarea></label>
+          <label>我们做了什么<textarea id="done_items" placeholder="例如 完成循迹挑战和红绿灯任务"></textarea></label>
+          <label>过程亮点<textarea id="highlights" placeholder="例如 两轮迭代优化"></textarea></label>
+          <label>整体收获<textarea id="harvest" placeholder="例如 协作与表达能力提升"></textarea></label>
+          <label>封面图链接<input id="cover_url" placeholder="https://..." /></label>
+          <div class="full-row">
+            <label>封面图本地上传（推荐）
+              <div class="inline">
+                <input id="cover_file" type="file" accept="image/*" />
+                <button id="uploadCoverBtn" type="button">上传并填入封面链接</button>
+              </div>
+            </label>
+          </div>
+          <label>展示状态 <span class="req">*</span>
+            <select id="status_field">
+              <option value="active">active（展示中）</option>
+              <option value="archived">archived（暂不展示）</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="saveClub" class="btn" type="button">保存到草稿库</button>
+          <button id="clearClub" class="btn btn-light" type="button">清空当前表单</button>
+        </div>
+      </section>
+
+      <section id="tab-artifact" class="card panel">
+        <h2>学员成果（student_artifact）</h2>
+        <p class="hint">系统将自动生成 `成果ID`、`学员化名`、`更新时间`，你也可以手动修改。</p>
+        <div class="grid">
+          <label>成果ID <span class="req">*</span>
+            <div class="inline">
+              <input id="artifact_id" placeholder="例如 A001" />
+              <button type="button" data-gen="artifact_id">推荐生成</button>
+            </div>
+          </label>
+          <label>学员化名 <span class="req">*</span>
+            <div class="inline">
+              <input id="student_alias" placeholder="例如 小创者01" />
+              <button type="button" data-gen="student_alias">推荐生成</button>
+            </div>
+          </label>
+          <label>年级 <span class="req">*</span><input id="grade" placeholder="例如 五年级" /></label>
+          <label>所属社团ID <span class="req">*</span>
+            <select id="artifact_club_id"></select>
+          </label>
+          <label>成果名称 <span class="req">*</span><input id="artifact_name" placeholder="例如 智能红绿灯控制程序" /></label>
+          <label>成果类型 <span class="req">*</span>
+            <select id="artifact_type">
+              <option value="作品">作品</option>
+              <option value="任务">任务</option>
+              <option value="探究">探究</option>
+              <option value="表达">表达</option>
+            </select>
+          </label>
+          <label>关键词<input id="keywords" placeholder="例如 编程 调试 传感器" /></label>
+          <label>我的参与内容<textarea id="participation" placeholder="例如 负责逻辑编写与测试"></textarea></label>
+          <label>成果简介<textarea id="artifact_intro" placeholder="例如 实现按钮触发与倒计时提示"></textarea></label>
+          <label>一句话收获<textarea id="one_line_harvest" maxlength="140" placeholder="建议 140 字以内"></textarea></label>
+          <label>成长证据<textarea id="growth_evidence" placeholder="例如 从3次报错到最终稳定运行"></textarea></label>
+          <label>教师简评<textarea id="teacher_comment" placeholder="例如 调试过程完整且表达清晰"></textarea></label>
+          <label>更新时间
+            <div class="inline">
+              <input id="updated_at" placeholder="YYYY-MM-DD HH:mm:ss" />
+              <button type="button" data-gen="updated_at">填入当前时间</button>
+            </div>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="saveArtifact" class="btn" type="button">保存到草稿库</button>
+          <button id="clearArtifact" class="btn btn-light" type="button">清空当前表单</button>
+        </div>
+      </section>
+
+      <section id="tab-media" class="card panel">
+        <h2>素材绑定（media_asset）</h2>
+        <p class="hint">把云盘中“可公开访问”的图片/视频链接填进来即可。</p>
+        <div class="grid">
+          <label>素材ID <span class="req">*</span>
+            <div class="inline">
+              <input id="media_id" placeholder="例如 M001" />
+              <button type="button" data-gen="media_id">推荐生成</button>
+            </div>
+          </label>
+          <label>归属类型 <span class="req">*</span>
+            <select id="owner_type">
+              <option value="artifact">artifact（成果）</option>
+              <option value="club">club（社团）</option>
+            </select>
+          </label>
+          <label>归属ID <span class="req">*</span>
+            <select id="owner_id"></select>
+          </label>
+          <label>素材类型 <span class="req">*</span>
+            <select id="media_type">
+              <option value="image">image（图片）</option>
+              <option value="video">video（视频）</option>
+            </select>
+          </label>
+          <label>素材URL <span class="req">*</span><input id="media_url" placeholder="https://..." /></label>
+          <div class="full-row">
+            <label>本地素材上传（图片/视频）
+              <div class="inline">
+                <input id="media_file" type="file" accept="image/*,video/*" />
+                <button id="uploadMediaBtn" type="button">上传并填入素材链接</button>
+              </div>
+            </label>
+          </div>
+          <label>视频缩略图URL<input id="thumbnail_url" placeholder="https://..." /></label>
+          <label>版权状态<input id="copyright_status" placeholder="例如 学校授权" /></label>
+          <label>备注<input id="notes" placeholder="例如 成果截图" /></label>
+        </div>
+        <div class="actions">
+          <button id="saveMedia" class="btn" type="button">保存到草稿库</button>
+          <button id="clearMedia" class="btn btn-light" type="button">清空当前表单</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>草稿库（你已录入的数据）</h2>
+        <p class="hint">这里会临时保存你本次录入的数据。刷新页面不会丢失（保存在当前浏览器）。</p>
+        <div class="toolbar">
+          <button id="exportAllCsv" class="btn" type="button">导出三张 CSV</button>
+          <button id="clearDrafts" class="btn btn-danger" type="button">清空全部草稿</button>
+        </div>
+        <details open>
+          <summary>社团草稿（club_profile）</summary>
+          <div id="clubDrafts"></div>
+        </details>
+        <details>
+          <summary>成果草稿（student_artifact）</summary>
+          <div id="artifactDrafts"></div>
+        </details>
+        <details>
+          <summary>素材草稿（media_asset）</summary>
+          <div id="mediaDrafts"></div>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>填写提醒</h2>
+        <ul>
+          <li>学员请使用化名，不填写真实姓名。</li>
+          <li>成果类型只能选：作品、任务、探究、表达。</li>
+          <li>链接必须是 `http://` 或 `https://` 开头并可公开访问。</li>
+          <li>新增成果后，通常还需要新增至少 1 条素材绑定。</li>
+        </ul>
+      </section>
+    </main>
+
+    <script type="module" src="./collector.js"></script>
+  </body>
+</html>

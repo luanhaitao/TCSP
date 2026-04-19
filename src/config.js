@@ -2,6 +2,15 @@ export const CONFIG = {
   appTitle: '普陀区科技社团互动云展',
   privacyMode: 'alias-grade',
   autoRefreshMs: 0,
+  assetUpload: {
+    enabled: true,
+    provider: 'cloudinary',
+    cloudinary: {
+      cloudName: 'dyu1rz9wy',
+      uploadPreset: 'sedgo2y4',
+      folder: 'tcsp'
+    }
+  },
   datasource: {
     preferOnlineSheet: true,
     // 建议配置为在线表格“发布为 CSV”的公开链接

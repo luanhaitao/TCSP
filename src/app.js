@@ -85,14 +85,12 @@ function renderStats() {
   const studentCount = new Set(state.artifacts.map((item) => `${item.club_id}-${item.student_alias}`)).size;
   const artifactCount = state.artifacts.length;
   const mediaCount = state.media.length;
-  const categoryCount = new Set(state.clubs.map((club) => club.club_category).filter(Boolean)).size;
 
   const stats = [
     ['社团数量', clubCount],
     ['参与学员数', studentCount],
     ['成果卡总数', artifactCount],
-    ['图视频资料数', mediaCount],
-    ['社团类别数', categoryCount]
+    ['图视频资料数', mediaCount]
   ];
 
   statsEl.innerHTML = stats
