@@ -24,6 +24,34 @@ const state = {
   filteredArtifacts: []
 };
 
+function escAttr(value) {
+  return String(value ?? '').replace(/"/g, '&quot;');
+}
+
+function renderImageWithFallback({ className = '', src = '', alt = '', fallbackUrls = [] }) {
+  const firstValid = [src, ...fallbackUrls].find((u) => isAssetUrl(u));
+  const ordered = [src, ...fallbackUrls].filter((u) => isAssetUrl(u));
+  const initialSrc = firstValid || CONFIG.defaults.imagePlaceholder;
+  const rest = ordered.filter((u) => u !== initialSrc);
+  if (!rest.includes(CONFIG.defaults.imagePlaceholder)) rest.push(CONFIG.defaults.imagePlaceholder);
+  return `<img class="${className}" src="${escAttr(initialSrc)}" alt="${escAttr(alt)}" loading="lazy" data-fallbacks="${escAttr(rest.join('|'))}" />`;
+}
+
+function bindImageFallbacks(root = document) {
+  root.querySelectorAll('img[data-fallbacks]').forEach((img) => {
+    img.onerror = () => {
+      const list = String(img.dataset.fallbacks || '').split('|').filter(Boolean);
+      const next = list.shift();
+      if (next) {
+        img.dataset.fallbacks = list.join('|');
+        img.src = next;
+        return;
+      }
+      img.onerror = null;
+    };
+  });
+}
+
 function normalizeClub(row) {
   return {
     club_id: row.club_id,
@@ -130,15 +158,15 @@ function renderClubs() {
   clubListEl.innerHTML = state.filteredClubs
     .map((club) => {
       const mediaCover = getMediaForClub(club.club_id).find((m) => m.media_type === 'image');
-      const cover = isAssetUrl(club.cover_url)
-        ? club.cover_url
-        : isAssetUrl(mediaCover?.url)
-          ? mediaCover.url
-          : CONFIG.defaults.imagePlaceholder;
       const artifacts = state.artifacts.filter((item) => item.club_id === club.club_id).length;
       return `
         <article class="club-card">
-          <img class="media-preview" src="${cover}" alt="${club.club_name} 封面" loading="lazy" />
+          ${renderImageWithFallback({
+    className: 'media-preview',
+    src: club.cover_url,
+    alt: `${club.club_name} 封面`,
+    fallbackUrls: [mediaCover?.url, CONFIG.defaults.imagePlaceholder]
+  })}
           <div class="club-head">
             <h3>${club.club_name}</h3>
             <span class="badge">${club.club_category || '未分类'}</span>
@@ -150,6 +178,7 @@ function renderClubs() {
       `;
     })
     .join('');
+  bindImageFallbacks(clubListEl);
 }
 
 function artifactCardMedia(artifact) {
@@ -167,7 +196,11 @@ function artifactCardMedia(artifact) {
 function renderArtifactCover(artifact) {
   const media = artifactCardMedia(artifact);
   if (media.kind === 'image') {
-    return `<img src="${media.src}" alt="${artifact.artifact_name}" loading="lazy" />`;
+    return renderImageWithFallback({
+      src: media.src,
+      alt: artifact.artifact_name,
+      fallbackUrls: [CONFIG.defaults.imagePlaceholder]
+    });
   }
   if (media.kind === 'pdf') {
     return '<div class="artifact-cover artifact-cover-pdf"><span>PDF成果</span></div>';
@@ -199,6 +232,7 @@ function renderArtifacts() {
       `;
     })
     .join('');
+  bindImageFallbacks(artifactListEl);
 
   artifactListEl.querySelectorAll('button[data-artifact-id]').forEach((btn) => {
     btn.addEventListener('click', () => openDetail(btn.dataset.artifactId));
@@ -272,7 +306,12 @@ function openDetail(artifactId) {
       if (!isAssetUrl(media.url)) {
         return '<p class="warning">图片链接无效，已使用默认占位图。</p>';
       }
-      return `<img class="media-preview" src="${media.url}" alt="${item.artifact_name}" />`;
+      return renderImageWithFallback({
+        className: 'media-preview',
+        src: media.url,
+        alt: item.artifact_name,
+        fallbackUrls: [CONFIG.defaults.imagePlaceholder]
+      });
     })
     .join('');
 
@@ -286,6 +325,8 @@ function openDetail(artifactId) {
     <p><strong>教师简评：</strong>${safeText(item.teacher_comment, CONFIG.defaults.maxTextLength * 2) || '未填写'}</p>
     ${mediaHtml || '<p class="muted">暂无素材</p>'}
   `;
+
+  bindImageFallbacks(dialogBodyEl);
 
   dialogEl.showModal();
 }

@@ -34,7 +34,7 @@ export const CONFIG = {
     }
   },
   defaults: {
-    imagePlaceholder: 'https://placehold.co/600x450/e9f2fa/5d7894?text=%E6%9A%82%E6%97%A0%E5%9B%BE%E7%89%87',
+    imagePlaceholder: '/src/assets/image_placeholder.svg',
     maxTextLength: 140
   }
 };
