@@ -1,5 +1,7 @@
 # 普陀区科技社团互动云展（1+N+X）
 
+> TCSP - Technology Club Project Showcase
+
 首版目标：
 - 页面展示保持 `1+N+X` 结构
 - 教师通过在线表格维护数据（不改代码）
