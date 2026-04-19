@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "serve:portal": "node scripts/portal_server.mjs",
     "validate:data": "node scripts/validate_data.mjs",
     "backup:data": "node scripts/backup_snapshot.mjs",
     "restore:data": "node scripts/restore_snapshot.mjs"

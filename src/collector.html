@@ -27,6 +27,12 @@
       <section id="tab-club" class="card panel is-active">
         <h2>社团信息（club_profile）</h2>
         <p class="hint">带 <span class="req">*</span> 为必填。系统可自动生成 `社团ID`。</p>
+        <div class="import-tools">
+          <button id="downloadClubTemplate" class="btn btn-light" type="button">下载社团导入模板（Excel）</button>
+          <input id="clubImportFile" type="file" accept=".xlsx,.xls" />
+          <button id="importClubBtn" class="btn" type="button">一键导入社团（Excel）</button>
+        </div>
+        <p class="small">模板字段为中文表头。导入时支持新增和按“社团ID”覆盖更新。</p>
         <div class="grid">
           <label>社团ID <span class="req">*</span>
             <div class="inline">
@@ -47,7 +53,7 @@
           <label>封面图链接<input id="cover_url" placeholder="https://..." /></label>
           <div class="full-row">
             <label>封面图本地上传（推荐）
-              <div class="inline">
+              <div class="inline upload-inline">
                 <input id="cover_file" type="file" accept="image/*" />
                 <button id="uploadCoverBtn" type="button">上传并填入封面链接</button>
               </div>
@@ -69,6 +75,12 @@
       <section id="tab-artifact" class="card panel">
         <h2>学员成果（student_artifact）</h2>
         <p class="hint">系统将自动生成 `成果ID`、`学员化名`、`更新时间`，你也可以手动修改。</p>
+        <div class="import-tools">
+          <button id="downloadArtifactTemplate" class="btn btn-light" type="button">下载成果导入模板（Excel）</button>
+          <input id="artifactImportFile" type="file" accept=".xlsx,.xls" />
+          <button id="importArtifactBtn" class="btn" type="button">一键导入成果（Excel）</button>
+        </div>
+        <p class="small">模板字段均为中文表头。导入时支持新增和按“成果ID”覆盖更新。</p>
         <div class="grid">
           <label>成果ID <span class="req">*</span>
             <div class="inline">
@@ -83,7 +95,7 @@
             </div>
           </label>
           <label>年级 <span class="req">*</span><input id="grade" placeholder="例如 五年级" /></label>
-          <label>所属社团ID <span class="req">*</span>
+          <label>所属社团 <span class="req">*</span>
             <select id="artifact_club_id"></select>
           </label>
           <label>成果名称 <span class="req">*</span><input id="artifact_name" placeholder="例如 智能红绿灯控制程序" /></label>
@@ -116,7 +128,33 @@
 
       <section id="tab-media" class="card panel">
         <h2>素材绑定（media_asset）</h2>
-        <p class="hint">把云盘中“可公开访问”的图片/视频链接填进来即可。</p>
+        <p class="hint">支持“本地单文件上传”与“目录一键导入”两种方式。</p>
+        <div class="import-tools">
+          <input id="mediaFolderInput" class="hidden-file-input" type="file" webkitdirectory directory multiple />
+          <button id="pickMediaFolderBtn" class="btn btn-light" type="button">请选择素材文件夹</button>
+          <span id="mediaFolderPicked" class="small">未选择目录</span>
+          <button id="importMediaFolderBtn" class="btn" type="button">开始一键导入素材目录</button>
+        </div>
+        <article class="rule-card">
+          <h3>目录命名规则（请严格按此命名）</h3>
+          <p><strong>格式：</strong><code>成果ID_成果名称</code>，例如 <code>A001_智能红绿灯</code></p>
+          <p><strong>支持后缀：</strong>图片 <code>jpg/png/gif/webp</code>；视频 <code>mp4/mov/webm</code>；文档 <code>pdf</code></p>
+          <p class="small">系统会从目录名前缀自动识别成果ID并绑定到对应成果。</p>
+        </article>
+        <details>
+          <summary>查看示例结构</summary>
+          <pre class="example-tree">素材根目录/
+  A001_智能红绿灯/
+    demo1.jpg
+    demo2.mp4
+    demo2.jpg
+  A002_水生态观察/
+    result1.png
+  A003_图文报告展示/
+    report.pdf</pre>
+    result2.png</pre>
+        </details>
+        <p id="mediaImportResult" class="small"></p>
         <div class="grid">
           <label>素材ID <span class="req">*</span>
             <div class="inline">
@@ -137,13 +175,14 @@
             <select id="media_type">
               <option value="image">image（图片）</option>
               <option value="video">video（视频）</option>
+              <option value="pdf">pdf（文档）</option>
             </select>
           </label>
-          <label>素材URL <span class="req">*</span><input id="media_url" placeholder="https://..." /></label>
+          <label>素材URL <span id="mediaUrlReq" class="req">*</span><input id="media_url" placeholder="https://..." /></label>
           <div class="full-row">
             <label>本地素材上传（图片/视频）
-              <div class="inline">
-                <input id="media_file" type="file" accept="image/*,video/*" />
+              <div class="inline upload-inline">
+                <input id="media_file" type="file" accept="image/*,video/*,.pdf,application/pdf" />
                 <button id="uploadMediaBtn" type="button">上传并填入素材链接</button>
               </div>
             </label>
@@ -162,6 +201,7 @@
         <h2>草稿库（你已录入的数据）</h2>
         <p class="hint">这里会临时保存你本次录入的数据。刷新页面不会丢失（保存在当前浏览器）。</p>
         <div class="toolbar">
+          <button id="publishDrafts" class="btn" type="button">一键自动发布（推荐）</button>
           <button id="exportAllCsv" class="btn" type="button">导出三张 CSV</button>
           <button id="clearDrafts" class="btn btn-danger" type="button">清空全部草稿</button>
         </div>
@@ -190,6 +230,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script type="module" src="./collector.js"></script>
   </body>
 </html>

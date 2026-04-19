@@ -43,7 +43,7 @@
 | `media_id` | 是 | 素材唯一ID | `M001` |
 | `owner_type` | 是 | `club` 或 `artifact` | `artifact` |
 | `owner_id` | 是 | 所属对象ID | `A001` |
-| `media_type` | 是 | `image` 或 `video` | `image` |
+| `media_type` | 是 | `image` / `video` / `pdf` | `image` |
 | `url` | 是 | 素材链接（http/https） | `https://...` |
 | `thumbnail_url` | 否 | 视频缩略图链接 | `https://...` |
 | `copyright_status` | 否 | 版权状态 | `学校授权` |

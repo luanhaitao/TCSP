@@ -55,6 +55,14 @@ export function isHttpUrl(value) {
   }
 }
 
+export function isAssetUrl(value) {
+  if (!value) return false;
+  const text = String(value).trim();
+  if (!text) return false;
+  if (text.startsWith('/')) return true;
+  return isHttpUrl(text);
+}
+
 export function safeText(value, maxLen = 140) {
   const text = String(value ?? '').trim();
   if (!text) return '';

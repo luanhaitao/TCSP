@@ -116,6 +116,15 @@ textarea {
   min-width: 0;
 }
 
+.upload-inline {
+  grid-template-columns: minmax(280px, 520px) auto;
+  justify-content: start;
+}
+
+.upload-inline input[type='file'] {
+  width: 100%;
+}
+
 .actions, .toolbar {
   margin-top: 12px;
   display: flex;
@@ -175,6 +184,53 @@ th { background: #f4fbff; }
   color: var(--muted);
 }
 
+.import-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.import-tools input[type='file'] {
+  max-width: 280px;
+}
+
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rule-card {
+  border: 1px solid #cfe4f6;
+  background: linear-gradient(180deg, #f8fcff, #f2f9ff);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.rule-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.rule-card p {
+  margin: 4px 0;
+}
+
+.example-tree {
+  margin: 8px 0 0;
+  background: #f5fbff;
+  border: 1px solid #d7e9f8;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  overflow: auto;
+}
+
 .warn {
   color: var(--warn);
   background: #fff6e6;
@@ -184,4 +240,5 @@ th { background: #f4fbff; }
 
 @media (max-width: 760px) {
   .inline { grid-template-columns: 1fr; }
+  .upload-inline { grid-template-columns: 1fr; }
 }

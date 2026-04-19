@@ -1,0 +1,17 @@
+[Unit]
+Description=TCSP Portal Server
+After=network.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+WorkingDirectory=__PROJECT_DIR__
+Environment=PORT=8090
+ExecStart=/usr/bin/env npm run serve:portal
+Restart=always
+RestartSec=3
+StandardOutput=append:__PROJECT_DIR__/portal.systemd.log
+StandardError=append:__PROJECT_DIR__/portal.systemd.err.log
+
+[Install]
+WantedBy=multi-user.target

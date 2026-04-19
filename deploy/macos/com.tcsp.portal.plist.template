@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tcsp.portal</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>npm</string>
+    <string>run</string>
+    <string>serve:portal</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_DIR__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PORT</key>
+    <string>8090</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__PROJECT_DIR__/portal.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__PROJECT_DIR__/portal.launchd.err.log</string>
+</dict>
+</plist>

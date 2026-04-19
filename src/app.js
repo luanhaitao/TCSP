@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 import { loadAllTables } from './data-source.js';
 import { validateData } from './validate.js';
-import { isHttpUrl, nowLabel, safeText } from './utils.js';
+import { isAssetUrl, nowLabel, safeText } from './utils.js';
 
 const statsEl = document.getElementById('stats');
 const clubListEl = document.getElementById('clubList');
@@ -14,6 +14,7 @@ const dialogEl = document.getElementById('artifactDialog');
 const dialogBodyEl = document.getElementById('dialogBody');
 const syncMetaEl = document.getElementById('syncMeta');
 const refreshBtn = document.getElementById('refreshBtn');
+const heroBgEl = document.querySelector('.hero-bg');
 
 const state = {
   clubs: [],
@@ -80,6 +81,28 @@ function getMediaForClub(clubId) {
   return state.media.filter((m) => m.owner_type === 'club' && m.owner_id === clubId);
 }
 
+function renderHeroBackdrop() {
+  if (!heroBgEl) return;
+  const imageUrls = state.media
+    .filter((m) => m.media_type === 'image' && isAssetUrl(m.url))
+    .map((m) => m.url);
+
+  if (!imageUrls.length) {
+    heroBgEl.innerHTML = '';
+    return;
+  }
+
+  const maxTiles = Math.min(16, imageUrls.length);
+  const shuffled = [...imageUrls].sort(() => Math.random() - 0.5).slice(0, maxTiles);
+  const tiles = shuffled
+    .map((url, idx) => {
+      const safeUrl = String(url).replaceAll('"', '%22').replaceAll("'", '%27');
+      return `<span class="hero-tile hero-tile-${(idx % 4) + 1}" style="background-image:url(&quot;${safeUrl}&quot;)"></span>`;
+    })
+    .join('');
+  heroBgEl.innerHTML = `<div class="hero-wall">${tiles}</div>`;
+}
+
 function renderStats() {
   const clubCount = state.clubs.length;
   const studentCount = new Set(state.artifacts.map((item) => `${item.club_id}-${item.student_alias}`)).size;
@@ -107,9 +130,9 @@ function renderClubs() {
   clubListEl.innerHTML = state.filteredClubs
     .map((club) => {
       const mediaCover = getMediaForClub(club.club_id).find((m) => m.media_type === 'image');
-      const cover = isHttpUrl(club.cover_url)
+      const cover = isAssetUrl(club.cover_url)
         ? club.cover_url
-        : isHttpUrl(mediaCover?.url)
+        : isAssetUrl(mediaCover?.url)
           ? mediaCover.url
           : CONFIG.defaults.imagePlaceholder;
       const artifacts = state.artifacts.filter((item) => item.club_id === club.club_id).length;
@@ -131,9 +154,28 @@ function renderClubs() {
 
 function artifactCardMedia(artifact) {
   const first = getMediaForArtifact(artifact.artifact_id)[0];
-  if (!first) return CONFIG.defaults.imagePlaceholder;
-  if (first.media_type === 'video') return first.thumbnail_url && isHttpUrl(first.thumbnail_url) ? first.thumbnail_url : CONFIG.defaults.imagePlaceholder;
-  return isHttpUrl(first.url) ? first.url : CONFIG.defaults.imagePlaceholder;
+  if (!first) return { kind: 'empty', src: '' };
+  if (first.media_type === 'video') {
+    if (first.thumbnail_url && isAssetUrl(first.thumbnail_url)) return { kind: 'image', src: first.thumbnail_url };
+    return { kind: 'video', src: '' };
+  }
+  if (first.media_type === 'pdf') return { kind: 'pdf', src: '' };
+  if (isAssetUrl(first.url)) return { kind: 'image', src: first.url };
+  return { kind: 'empty', src: '' };
+}
+
+function renderArtifactCover(artifact) {
+  const media = artifactCardMedia(artifact);
+  if (media.kind === 'image') {
+    return `<img src="${media.src}" alt="${artifact.artifact_name}" loading="lazy" />`;
+  }
+  if (media.kind === 'pdf') {
+    return '<div class="artifact-cover artifact-cover-pdf"><span>PDF成果</span></div>';
+  }
+  if (media.kind === 'video') {
+    return '<div class="artifact-cover artifact-cover-video"><span>视频成果</span></div>';
+  }
+  return '<div class="artifact-cover artifact-cover-empty"><span>暂无封面</span></div>';
 }
 
 function renderArtifacts() {
@@ -147,7 +189,7 @@ function renderArtifacts() {
       const club = state.clubs.find((c) => c.club_id === item.club_id);
       return `
         <article class="artifact-card">
-          <img src="${artifactCardMedia(item)}" alt="${item.artifact_name}" loading="lazy" />
+          ${renderArtifactCover(item)}
           <h3>${item.artifact_name}</h3>
           <p class="muted">${item.student_alias}（${item.grade}）｜${club?.club_name || '未知社团'}</p>
           <span class="badge">${item.artifact_type}</span>
@@ -209,12 +251,25 @@ function openDetail(artifactId) {
   const mediaHtml = medias
     .map((media) => {
       if (media.media_type === 'video') {
-        if (!isHttpUrl(media.url)) {
+        if (!isAssetUrl(media.url)) {
           return '<p class="warning">视频链接无效，已隐藏播放按钮。</p>';
         }
         return `<p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开视频</a></p>`;
       }
-      if (!isHttpUrl(media.url)) {
+      if (media.media_type === 'pdf') {
+        if (!isAssetUrl(media.url)) {
+          return '<p class="warning">PDF链接无效，已隐藏打开按钮。</p>';
+        }
+        return `
+          <div class="pdf-preview-wrap">
+            <object data="${media.url}" type="application/pdf" class="pdf-preview">
+              <p class="muted">当前浏览器无法直接预览PDF，可使用下方按钮打开。</p>
+            </object>
+          </div>
+          <p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开成果PDF</a></p>
+        `;
+      }
+      if (!isAssetUrl(media.url)) {
         return '<p class="warning">图片链接无效，已使用默认占位图。</p>';
       }
       return `<img class="media-preview" src="${media.url}" alt="${item.artifact_name}" />`;
@@ -250,6 +305,7 @@ async function boot() {
     buildFilters();
     state.filteredArtifacts = [...state.artifacts];
     state.filteredClubs = [...state.clubs];
+    renderHeroBackdrop();
     renderStats();
     renderClubs();
     renderArtifacts();

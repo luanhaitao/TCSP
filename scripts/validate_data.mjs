@@ -1,7 +1,7 @@
-import { readText, parseCsv, isHttpUrl } from './shared_csv.mjs';
+import { readText, parseCsv, isAssetUrl } from './shared_csv.mjs';
 
 const TYPES = new Set(['作品', '任务', '探究', '表达']);
-const MEDIA_TYPES = new Set(['image', 'video']);
+const MEDIA_TYPES = new Set(['image', 'video', 'pdf']);
 
 function required(row, key) {
   return String(row[key] ?? '').trim().length > 0;
@@ -29,7 +29,7 @@ async function main() {
     ['club_id', 'club_name', 'teacher', 'status'].forEach((field) => {
       if (!required(club, field)) issue(issues, `${row} 缺少 ${field}`);
     });
-    if (club.cover_url && !isHttpUrl(club.cover_url)) issue(issues, `${row} cover_url 非法`);
+    if (club.cover_url && !isAssetUrl(club.cover_url)) issue(issues, `${row} cover_url 非法`);
   });
 
   artifacts.forEach((item, idx) => {
@@ -50,8 +50,8 @@ async function main() {
     if (item.owner_type === 'club' && !clubIds.has(item.owner_id)) issue(issues, `${row} owner_id 社团不存在`);
     if (item.owner_type === 'artifact' && !artifactIds.has(item.owner_id)) issue(issues, `${row} owner_id 成果不存在`);
     if (!MEDIA_TYPES.has(item.media_type)) issue(issues, `${row} media_type 非法`);
-    if (!isHttpUrl(item.url)) issue(issues, `${row} url 非法`);
-    if (item.thumbnail_url && !isHttpUrl(item.thumbnail_url)) issue(issues, `${row} thumbnail_url 非法`);
+    if (!isAssetUrl(item.url)) issue(issues, `${row} url 非法`);
+    if (item.thumbnail_url && !isAssetUrl(item.thumbnail_url)) issue(issues, `${row} thumbnail_url 非法`);
   });
 
   if (issues.length) {

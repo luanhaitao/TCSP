@@ -2,12 +2,21 @@ export const CONFIG = {
   appTitle: '普陀区科技社团互动云展',
   privacyMode: 'alias-grade',
   autoRefreshMs: 0,
+  publish: {
+    enabled: true,
+    apiUrl: 'http://localhost:8090/api/publish',
+    clearDraftsAfterPublish: true
+  },
   assetUpload: {
     enabled: true,
-    provider: 'cloudinary',
+    provider: 'local',
+    local: {
+      apiUrl: '/api/upload',
+      maxSizeMb: 100
+    },
     cloudinary: {
-      cloudName: 'dyu1rz9wy',
-      uploadPreset: 'sedgo2y4',
+      cloudName: '',
+      uploadPreset: '',
       folder: 'tcsp'
     }
   },

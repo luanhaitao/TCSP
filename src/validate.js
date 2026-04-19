@@ -1,7 +1,7 @@
-import { isHttpUrl } from './utils.js';
+import { isAssetUrl } from './utils.js';
 
 const TYPES = new Set(['作品', '任务', '探究', '表达']);
-const MEDIA_TYPES = new Set(['image', 'video']);
+const MEDIA_TYPES = new Set(['image', 'video', 'pdf']);
 
 function required(row, key) {
   return String(row[key] ?? '').trim().length > 0;
@@ -17,7 +17,7 @@ export function validateData({ clubs, artifacts, media }, maxTextLength = 140) {
     ['club_id', 'club_name', 'teacher', 'status'].forEach((field) => {
       if (!required(club, field)) issues.push(`${rowTag}: 缺少必填字段 ${field}`);
     });
-    if (club.cover_url && !isHttpUrl(club.cover_url)) {
+    if (club.cover_url && !isAssetUrl(club.cover_url)) {
       issues.push(`${rowTag}: cover_url 不是有效链接`);
     }
     ['intro', 'learned_topics', 'done_items', 'highlights', 'harvest'].forEach((field) => {
@@ -58,12 +58,12 @@ export function validateData({ clubs, artifacts, media }, maxTextLength = 140) {
       issues.push(`${rowTag}: owner_id 对应成果不存在 (${item.owner_id})`);
     }
     if (!MEDIA_TYPES.has(item.media_type)) {
-      issues.push(`${rowTag}: media_type 必须是 image 或 video`);
+      issues.push(`${rowTag}: media_type 必须是 image / video / pdf`);
     }
-    if (!isHttpUrl(item.url)) {
+    if (!isAssetUrl(item.url)) {
       issues.push(`${rowTag}: url 不是有效链接`);
     }
-    if (item.thumbnail_url && !isHttpUrl(item.thumbnail_url)) {
+    if (item.thumbnail_url && !isAssetUrl(item.thumbnail_url)) {
       issues.push(`${rowTag}: thumbnail_url 不是有效链接`);
     }
   });
