@@ -1,0 +1,4 @@
+media_id,owner_type,owner_id,media_type,url,thumbnail_url,copyright_status,notes
+M001,club,C001,image,https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=900&q=60,,学校授权,社团封面图
+M002,artifact,A001,image,https://images.unsplash.com/photo-1553406830-ef2513450d76?auto=format&fit=crop&w=900&q=60,,学校授权,成果截图
+M003,artifact,A002,video,https://example.com/video.mp4,https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=900&q=60,学校授权,成果讲解视频

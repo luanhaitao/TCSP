@@ -1,0 +1,8 @@
+{
+  "created_at": "2026-04-19T03:14:02.296Z",
+  "sources": {
+    "club_profile": "data/club_profile.csv",
+    "student_artifact": "data/student_artifact.csv",
+    "media_asset": "data/media_asset.csv"
+  }
+}

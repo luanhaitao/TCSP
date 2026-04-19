@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>人人参与·人人有成果 | 科技社团互动云展</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero-bg"></div>
+      <div class="hero-content">
+        <p class="eyebrow">普陀区青少年教育活动中心</p>
+        <h1>人人参与 · 人人有成果</h1>
+        <p class="subtitle">科技社团互动云展（1+N+X）</p>
+        <div class="hero-actions">
+          <a class="btn" href="#clubs">进入云展</a>
+          <a class="btn btn-light" href="#artifacts">查看全员成果墙</a>
+          <button id="refreshBtn" class="btn btn-ghost" type="button">刷新最新数据</button>
+        </div>
+        <p class="meta" id="syncMeta">数据载入中...</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel" id="overview">
+        <h2>科技组总体数据</h2>
+        <div class="stat-grid" id="stats"></div>
+      </section>
+
+      <section class="panel" id="clubs">
+        <div class="section-head">
+          <h2>N 个社团展区</h2>
+          <input id="clubSearch" class="search" placeholder="搜索社团 / 教师 / 类别" />
+        </div>
+        <div id="clubList" class="club-grid"></div>
+      </section>
+
+      <section class="panel" id="artifacts">
+        <div class="section-head">
+          <h2>X 全员成果墙</h2>
+          <div class="filters">
+            <select id="filterClub"></select>
+            <select id="filterType"></select>
+            <input id="filterKeyword" class="search" placeholder="输入关键词筛选" />
+          </div>
+        </div>
+        <div id="artifactList" class="artifact-grid"></div>
+      </section>
+    </main>
+
+    <dialog id="artifactDialog" class="artifact-dialog">
+      <article id="dialogBody"></article>
+      <form method="dialog">
+        <button class="btn" type="submit">关闭</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

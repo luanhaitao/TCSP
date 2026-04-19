@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "club_profile",
+  "type": "object",
+  "required": ["club_id", "club_name", "teacher", "status"],
+  "properties": {
+    "club_id": { "type": "string", "minLength": 1 },
+    "club_name": { "type": "string", "minLength": 1 },
+    "teacher": { "type": "string", "minLength": 1 },
+    "grade_range": { "type": "string" },
+    "student_count": { "type": ["string", "number"] },
+    "club_category": { "type": "string" },
+    "intro": { "type": "string" },
+    "learned_topics": { "type": "string" },
+    "done_items": { "type": "string" },
+    "highlights": { "type": "string" },
+    "harvest": { "type": "string" },
+    "cover_url": { "type": "string", "format": "uri" },
+    "status": { "type": "string", "enum": ["active", "archived"] }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,3 @@
+club_id,club_name,teacher,grade_range,student_count,club_category,intro,learned_topics,done_items,highlights,harvest,cover_url,status
+C001,智能编程社,张老师,四-六年级,36,智能编程馆,围绕编程思维与项目实践开展课程,基础逻辑;传感器编程;调试策略,完成智能红绿灯任务和循迹挑战,从小任务到完整项目逐步推进,学生问题解决与协作能力提升,https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=60,active
+C002,科学探究社,李老师,三-五年级,28,科学探究馆,开展水生态与生物观察主题研究,观察记录;实验变量;数据分析,完成水样采集与实验报告,探究流程规范且记录完整,学生形成科学观察与表达习惯,https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=900&q=60,active

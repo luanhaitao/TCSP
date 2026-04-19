@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "student_artifact",
+  "type": "object",
+  "required": ["artifact_id", "student_alias", "grade", "club_id", "artifact_name", "artifact_type"],
+  "properties": {
+    "artifact_id": { "type": "string", "minLength": 1 },
+    "student_alias": { "type": "string", "minLength": 1 },
+    "grade": { "type": "string", "minLength": 1 },
+    "club_id": { "type": "string", "minLength": 1 },
+    "artifact_name": { "type": "string", "minLength": 1 },
+    "artifact_type": { "type": "string", "enum": ["作品", "任务", "探究", "表达"] },
+    "keywords": { "type": "string" },
+    "participation": { "type": "string" },
+    "artifact_intro": { "type": "string" },
+    "one_line_harvest": { "type": "string", "maxLength": 140 },
+    "growth_evidence": { "type": "string" },
+    "teacher_comment": { "type": "string" },
+    "updated_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

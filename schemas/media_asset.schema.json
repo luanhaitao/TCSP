@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "media_asset",
+  "type": "object",
+  "required": ["media_id", "owner_type", "owner_id", "media_type", "url"],
+  "properties": {
+    "media_id": { "type": "string", "minLength": 1 },
+    "owner_type": { "type": "string", "enum": ["club", "artifact"] },
+    "owner_id": { "type": "string", "minLength": 1 },
+    "media_type": { "type": "string", "enum": ["image", "video"] },
+    "url": { "type": "string", "format": "uri" },
+    "thumbnail_url": { "type": "string", "format": "uri" },
+    "copyright_status": { "type": "string" },
+    "notes": { "type": "string" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,11 @@
+{
+  "name": "putuo-club-cloud-expo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "validate:data": "node scripts/validate_data.mjs",
+    "backup:data": "node scripts/backup_snapshot.mjs",
+    "restore:data": "node scripts/restore_snapshot.mjs"
+  }
+}
