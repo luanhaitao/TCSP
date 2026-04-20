@@ -78,7 +78,7 @@
 
       <section id="tab-artifact" class="card panel">
         <h2>学员成果</h2>
-        <p class="hint">系统将自动生成 `成果ID`、`学员化名`、`更新时间`，你也可以手动修改。</p>
+        <p class="hint">系统将自动生成 `成果ID`、`学员姓名`、`更新时间`，你也可以手动修改。</p>
         <div class="import-tools">
           <button id="downloadArtifactTemplate" class="btn btn-light" type="button">下载成果导入模板</button>
           <input id="artifactImportFile" type="file" accept=".xlsx,.xls" />
@@ -93,9 +93,9 @@
               <button type="button" data-gen="artifact_id">推荐生成</button>
             </div>
           </label>
-          <label>学员化名 <span class="req">*</span>
+          <label>学员姓名 <span class="req">*</span>
             <div class="inline">
-              <input id="student_alias" placeholder="例如 小创者01" />
+              <input id="student_alias" placeholder="例如 张三" />
               <button type="button" data-gen="student_alias">推荐生成</button>
             </div>
           </label>
@@ -231,7 +231,6 @@
       <section class="card">
         <h2>填写提醒</h2>
         <ul>
-          <li>学员请使用化名，不填写真实姓名。</li>
           <li>成果类型只能选：作品、任务、探究、表达。</li>
           <li>链接必须是 `http://` 或 `https://` 开头并可公开访问。</li>
           <li>新增成果后，通常还需要新增至少 1 条素材绑定。</li>

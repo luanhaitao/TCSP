@@ -47,7 +47,7 @@ const MEDIA_HEADERS = [
 ];
 const ARTIFACT_CN_HEADERS = [
   '成果ID',
-  '学员化名',
+  '学员姓名',
   '年级',
   '所属社团',
   '成果名称',
@@ -61,7 +61,7 @@ const ARTIFACT_CN_HEADERS = [
 ];
 const ARTIFACT_CN_TO_KEY = {
   成果ID: 'artifact_id',
-  学员化名: 'student_alias',
+  学员姓名: 'student_alias',
   年级: 'grade',
   所属社团: 'club_id',
   成果名称: 'artifact_name',
@@ -96,7 +96,7 @@ const TABLE_HEADER_LABELS = {
   },
   artifacts: {
     artifact_id: '成果ID',
-    student_alias: '学员化名',
+    student_alias: '学员姓名',
     grade: '年级',
     club_id: '所属社团',
     artifact_name: '成果名称',
@@ -555,7 +555,7 @@ function bindGenerators() {
       if (key === 'club_id') byId('club_id').value = nextId('C', state.base.clubs, state.drafts.clubs, 'club_id');
       if (key === 'artifact_id') byId('artifact_id').value = nextId('A', state.base.artifacts, state.drafts.artifacts, 'artifact_id');
       if (key === 'media_id') byId('media_id').value = nextId('M', state.base.media, state.drafts.media, 'media_id');
-      if (key === 'student_alias') byId('student_alias').value = `小创者${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
+      if (key === 'student_alias') byId('student_alias').value = `学员${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
       if (key === 'updated_at') byId('updated_at').value = nowText();
     });
   });
@@ -698,6 +698,10 @@ function createArtifactRowFromChinese(sourceRow) {
   for (const [cn, internal] of Object.entries(ARTIFACT_CN_TO_KEY)) {
     row[internal] = String(sourceRow[cn] ?? '').trim();
   }
+  // 兼容旧模板字段“学员化名”
+  if (!row.student_alias) {
+    row.student_alias = String(sourceRow['学员化名'] ?? '').trim();
+  }
 
   // 兼容旧模板字段“所属社团ID”
   if (!row.club_id) {
@@ -705,7 +709,7 @@ function createArtifactRowFromChinese(sourceRow) {
   }
 
   if (!row.artifact_id) row.artifact_id = getNextArtifactId();
-  if (!row.student_alias) row.student_alias = `小创者${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
+  if (!row.student_alias) row.student_alias = `学员${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
   row.updated_at = nowText();
   if (!row.artifact_type) row.artifact_type = '作品';
 
@@ -727,7 +731,7 @@ function downloadArtifactTemplate() {
     const XLSX = getXlsx();
     const sample = {
       成果ID: '',
-      学员化名: '小创者01',
+      学员姓名: '张三',
       年级: '五年级',
       所属社团: allClubs()[0]?.club_name || '智能编程社',
       成果名称: '示例成果名称',
@@ -1488,13 +1492,13 @@ function init() {
   renderDrafts();
   loadBaseData();
   byId('updated_at').value = nowText();
-  byId('student_alias').value = `小创者${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
+  byId('student_alias').value = `学员${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
   byId('club_id').value = nextId('C', state.base.clubs, state.drafts.clubs, 'club_id');
   byId('artifact_id').value = nextId('A', state.base.artifacts, state.drafts.artifacts, 'artifact_id');
   byId('media_id').value = nextId('M', state.base.media, state.drafts.media, 'media_id');
 
   if (CONFIG.privacyMode !== 'alias-grade') {
-    setStatus('提醒：当前系统隐私模式非化名模式，请确认配置。', true);
+    setStatus('提醒：当前隐私模式与当前收集字段设置不一致，请确认配置。', true);
     return;
   }
   if (!CONFIG.assetUpload?.enabled) {
