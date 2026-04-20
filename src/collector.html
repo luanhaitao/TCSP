@@ -26,12 +26,12 @@
       </section>
 
       <section id="tab-club" class="card panel is-active">
-        <h2>社团信息（club_profile）</h2>
+        <h2>社团信息</h2>
         <p class="hint">带 <span class="req">*</span> 为必填。系统可自动生成 `社团ID`。</p>
         <div class="import-tools">
-          <button id="downloadClubTemplate" class="btn btn-light" type="button">下载社团导入模板（Excel）</button>
+          <button id="downloadClubTemplate" class="btn btn-light" type="button">下载社团导入模板</button>
           <input id="clubImportFile" type="file" accept=".xlsx,.xls" />
-          <button id="importClubBtn" class="btn" type="button">一键导入社团（Excel）</button>
+          <button id="importClubBtn" class="btn" type="button">一键导入社团</button>
         </div>
         <p id="clubImportStatus" class="action-status">可先下载模板，再选择 Excel 一键导入。</p>
         <p class="small">模板字段为中文表头。导入时支持新增和按“社团ID”覆盖更新。</p>
@@ -64,8 +64,8 @@
           </div>
           <label>展示状态 <span class="req">*</span>
             <select id="status_field">
-              <option value="active">active（展示中）</option>
-              <option value="archived">archived（暂不展示）</option>
+              <option value="active">展示中</option>
+              <option value="archived">暂不展示</option>
             </select>
           </label>
         </div>
@@ -77,12 +77,12 @@
       </section>
 
       <section id="tab-artifact" class="card panel">
-        <h2>学员成果（student_artifact）</h2>
+        <h2>学员成果</h2>
         <p class="hint">系统将自动生成 `成果ID`、`学员化名`、`更新时间`，你也可以手动修改。</p>
         <div class="import-tools">
-          <button id="downloadArtifactTemplate" class="btn btn-light" type="button">下载成果导入模板（Excel）</button>
+          <button id="downloadArtifactTemplate" class="btn btn-light" type="button">下载成果导入模板</button>
           <input id="artifactImportFile" type="file" accept=".xlsx,.xls" />
-          <button id="importArtifactBtn" class="btn" type="button">一键导入成果（Excel）</button>
+          <button id="importArtifactBtn" class="btn" type="button">一键导入成果</button>
         </div>
         <p id="artifactImportStatus" class="action-status">支持新增或按成果ID覆盖更新。</p>
         <p class="small">模板字段均为中文表头。导入时支持新增和按“成果ID”覆盖更新。</p>
@@ -133,7 +133,7 @@
       </section>
 
       <section id="tab-media" class="card panel">
-        <h2>素材绑定（media_asset）</h2>
+        <h2>素材绑定</h2>
         <p class="hint">支持“本地单文件上传”与“目录一键导入”两种方式。</p>
         <div class="import-tools">
           <input id="mediaFolderInput" class="hidden-file-input" type="file" webkitdirectory directory multiple />
@@ -169,8 +169,8 @@
           </label>
           <label>归属类型 <span class="req">*</span>
             <select id="owner_type">
-              <option value="artifact">artifact（成果）</option>
-              <option value="club">club（社团）</option>
+              <option value="artifact">成果</option>
+              <option value="club">社团</option>
             </select>
           </label>
           <label>归属ID <span class="req">*</span>
@@ -178,9 +178,9 @@
           </label>
           <label>素材类型 <span class="req">*</span>
             <select id="media_type">
-              <option value="image">image（图片）</option>
-              <option value="video">video（视频）</option>
-              <option value="pdf">pdf（文档）</option>
+              <option value="image">图片</option>
+              <option value="video">视频</option>
+              <option value="pdf">文档</option>
             </select>
           </label>
           <label>素材URL <span id="mediaUrlReq" class="req">*</span><input id="media_url" placeholder="https://..." /></label>
@@ -215,15 +215,15 @@
         <p id="publishStatus" class="action-status">发布后会自动合并并生效。</p>
         <p id="exportStatus" class="action-status">导出会生成 3 个 CSV 文件。</p>
         <details open>
-          <summary>社团草稿（club_profile）</summary>
+          <summary>社团草稿</summary>
           <div id="clubDrafts"></div>
         </details>
         <details>
-          <summary>成果草稿（student_artifact）</summary>
+          <summary>成果草稿</summary>
           <div id="artifactDrafts"></div>
         </details>
         <details>
-          <summary>素材草稿（media_asset）</summary>
+          <summary>素材草稿</summary>
           <div id="mediaDrafts"></div>
         </details>
       </section>

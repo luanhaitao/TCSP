@@ -78,6 +78,48 @@ const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm']);
 const DOC_EXTS = new Set(['pdf']);
 const MEDIA_FOLDER_PATTERN = /^([A-Za-z]\\d+)_/;
+const TABLE_HEADER_LABELS = {
+  clubs: {
+    club_id: '社团ID',
+    club_name: '社团名称',
+    teacher: '执教教师',
+    grade_range: '面向年级',
+    student_count: '学员人数',
+    club_category: '展馆类别',
+    intro: '社团简介',
+    learned_topics: '本学期学了什么',
+    done_items: '我们做了什么',
+    highlights: '过程亮点',
+    harvest: '整体收获',
+    cover_url: '封面图链接',
+    status: '展示状态'
+  },
+  artifacts: {
+    artifact_id: '成果ID',
+    student_alias: '学员化名',
+    grade: '年级',
+    club_id: '所属社团',
+    artifact_name: '成果名称',
+    artifact_type: '成果类型',
+    keywords: '关键词',
+    participation: '我的参与内容',
+    artifact_intro: '成果简介',
+    one_line_harvest: '一句话收获',
+    growth_evidence: '成长证据',
+    teacher_comment: '教师简评',
+    updated_at: '更新时间'
+  },
+  media: {
+    media_id: '素材ID',
+    owner_type: '归属类型',
+    owner_id: '归属ID',
+    media_type: '素材类型',
+    url: '素材URL',
+    thumbnail_url: '视频缩略图URL',
+    copyright_status: '版权状态',
+    notes: '备注'
+  }
+};
 
 const state = {
   base: { clubs: [], artifacts: [], media: [] },
@@ -427,10 +469,11 @@ function renderTable(containerId, headers, rows, type) {
     return;
   }
 
-  const head = headers.map((h) => `<th>${h}</th>`).join('');
+  const labelMap = TABLE_HEADER_LABELS[type] || {};
+  const head = headers.map((h) => `<th>${labelMap[h] || h}</th>`).join('');
   const body = rows
     .map((row, idx) => {
-      const tds = headers.map((h) => `<td>${String(row[h] ?? '')}</td>`).join('');
+      const tds = headers.map((h) => `<td>${formatTableCell(type, h, row[h])}</td>`).join('');
       return `<tr><td><button data-edit="${type}" data-idx="${idx}">编辑</button> <button data-del="${type}" data-idx="${idx}">删除</button></td>${tds}</tr>`;
     })
     .join('');
@@ -460,6 +503,24 @@ function renderTable(containerId, headers, rows, type) {
       loadDraftRowToForm(btn.dataset.edit, Number(btn.dataset.idx));
     });
   });
+}
+
+function formatTableCell(type, key, rawValue) {
+  const value = String(rawValue ?? '');
+  if (type === 'clubs' && key === 'status') {
+    if (value === 'active') return '展示中';
+    if (value === 'archived') return '暂不展示';
+  }
+  if (type === 'media' && key === 'owner_type') {
+    if (value === 'artifact') return '成果';
+    if (value === 'club') return '社团';
+  }
+  if (type === 'media' && key === 'media_type') {
+    if (value === 'image') return '图片';
+    if (value === 'video') return '视频';
+    if (value === 'pdf') return '文档';
+  }
+  return value;
 }
 
 function renderDrafts() {
