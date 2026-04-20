@@ -555,7 +555,6 @@ function bindGenerators() {
       if (key === 'club_id') byId('club_id').value = nextId('C', state.base.clubs, state.drafts.clubs, 'club_id');
       if (key === 'artifact_id') byId('artifact_id').value = nextId('A', state.base.artifacts, state.drafts.artifacts, 'artifact_id');
       if (key === 'media_id') byId('media_id').value = nextId('M', state.base.media, state.drafts.media, 'media_id');
-      if (key === 'student_alias') byId('student_alias').value = `学员${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
       if (key === 'updated_at') byId('updated_at').value = nowText();
     });
   });
@@ -709,7 +708,6 @@ function createArtifactRowFromChinese(sourceRow) {
   }
 
   if (!row.artifact_id) row.artifact_id = getNextArtifactId();
-  if (!row.student_alias) row.student_alias = `学员${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
   row.updated_at = nowText();
   if (!row.artifact_type) row.artifact_type = '作品';
 
@@ -1495,7 +1493,6 @@ function init() {
   renderDrafts();
   loadBaseData();
   byId('updated_at').value = nowText();
-  byId('student_alias').value = `学员${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
   byId('club_id').value = nextId('C', state.base.clubs, state.drafts.clubs, 'club_id');
   byId('artifact_id').value = nextId('A', state.base.artifacts, state.drafts.artifacts, 'artifact_id');
   byId('media_id').value = nextId('M', state.base.media, state.drafts.media, 'media_id');

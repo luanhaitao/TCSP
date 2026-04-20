@@ -78,7 +78,7 @@
 
       <section id="tab-artifact" class="card panel">
         <h2>学员成果</h2>
-        <p class="hint">系统将自动生成 `成果ID`、`学员姓名`、`更新时间`，你也可以手动修改。</p>
+        <p class="hint">系统将自动生成 `成果ID`、`更新时间`，学员姓名请手动填写。</p>
         <div class="import-tools">
           <button id="downloadArtifactTemplate" class="btn btn-light" type="button">下载成果导入模板</button>
           <input id="artifactImportFile" type="file" accept=".xlsx,.xls" />
@@ -94,10 +94,7 @@
             </div>
           </label>
           <label>学员姓名 <span class="req">*</span>
-            <div class="inline">
-              <input id="student_alias" placeholder="例如 张三、李四 或 未来创客队" />
-              <button type="button" data-gen="student_alias">推荐生成</button>
-            </div>
+            <input id="student_alias" placeholder="例如 张三、李四 或 未来创客队" />
             <span class="small">可填写多人姓名（用“、”分隔）或小组名称。</span>
           </label>
           <label>年级 <span class="req">*</span><input id="grade" placeholder="例如 五年级" /></label>
