@@ -796,10 +796,12 @@ function bindSaves() {
     };
 
     if (!required(row.club_id) || !required(row.club_name) || !required(row.teacher) || !required(row.status)) {
+      setActionStatus('clubSaveStatus', '社团信息保存失败：请先填写所有必填项（红星项）。', true);
       setStatus('社团信息保存失败：请先填写所有必填项（红星项）', true);
       return;
     }
     if (!isUrl(row.cover_url)) {
+      setActionStatus('clubSaveStatus', '社团信息保存失败：封面图链接不是有效地址。', true);
       setStatus('社团信息保存失败：封面图链接不是有效的 http/https 地址', true);
       return;
     }
@@ -808,12 +810,15 @@ function bindSaves() {
     if (state.editing.clubs !== null && state.drafts.clubs[state.editing.clubs]) {
       state.drafts.clubs[state.editing.clubs] = row;
       state.editing.clubs = null;
+      setActionStatus('clubSaveStatus', `社团信息已更新并保存到草稿库：${row.club_name}`);
       setStatus(`社团信息已更新：${row.club_name}`);
     } else if (sameIdClubIdx !== -1) {
       state.drafts.clubs[sameIdClubIdx] = row;
+      setActionStatus('clubSaveStatus', `社团信息已按ID覆盖并保存到草稿库：${row.club_name}`);
       setStatus(`社团信息已按ID覆盖更新：${row.club_name}`);
     } else {
       state.drafts.clubs.push(row);
+      setActionStatus('clubSaveStatus', `社团信息保存成功：${row.club_name}`);
       setStatus(`社团信息已保存：${row.club_name}`);
     }
     saveDrafts();
@@ -840,6 +845,7 @@ function bindSaves() {
 
     if (!required(row.artifact_id) || !required(row.student_alias) || !required(row.grade) || !required(row.club_id)
       || !required(row.artifact_name) || !required(row.artifact_type)) {
+      setActionStatus('artifactSaveStatus', '成果保存失败：请先填写所有必填项（红星项）。', true);
       setStatus('成果保存失败：请先填写所有必填项（红星项）', true);
       return;
     }
@@ -848,12 +854,15 @@ function bindSaves() {
     if (state.editing.artifacts !== null && state.drafts.artifacts[state.editing.artifacts]) {
       state.drafts.artifacts[state.editing.artifacts] = row;
       state.editing.artifacts = null;
+      setActionStatus('artifactSaveStatus', `成果信息已更新并保存到草稿库：${row.artifact_name}`);
       setStatus(`成果信息已更新：${row.artifact_name}`);
     } else if (sameIdArtifactIdx !== -1) {
       state.drafts.artifacts[sameIdArtifactIdx] = row;
+      setActionStatus('artifactSaveStatus', `成果信息已按ID覆盖并保存到草稿库：${row.artifact_name}`);
       setStatus(`成果信息已按ID覆盖更新：${row.artifact_name}`);
     } else {
       state.drafts.artifacts.push(row);
+      setActionStatus('artifactSaveStatus', `成果信息保存成功：${row.artifact_name}`);
       setStatus(`成果信息已保存：${row.artifact_name}`);
     }
     saveDrafts();
@@ -874,6 +883,7 @@ function bindSaves() {
     };
 
     if (!required(row.media_id) || !required(row.owner_type) || !required(row.owner_id) || !required(row.media_type)) {
+      setActionStatus('mediaSaveStatus', '素材保存失败：请先填写所有必填项（红星项）。', true);
       setStatus('素材保存失败：请先填写所有必填项（红星项）', true);
       return;
     }
@@ -881,6 +891,7 @@ function bindSaves() {
     if (!row.url) {
       const file = byId('media_file').files?.[0];
       if (file && CONFIG.assetUpload?.enabled) {
+        setActionStatus('mediaSaveStatus', '未填写素材URL，正在自动上传本地文件...');
         setStatus('未填写素材URL，正在自动上传本地文件...');
         try {
           const result = await uploadLocalFile(file, { publicId: `media_${Date.now()}` });
@@ -889,16 +900,19 @@ function bindSaves() {
           byId('media_url').value = row.url;
           byId('media_type').value = row.media_type;
         } catch (error) {
+          setActionStatus('mediaSaveStatus', `素材保存失败：自动上传失败。${error.message}`, true);
           setStatus(`素材保存失败：自动上传失败。${error.message}`, true);
           return;
         }
       } else {
+        setActionStatus('mediaSaveStatus', '素材保存失败：请填写素材URL或先上传文件。', true);
         setStatus('素材保存失败：请填写素材URL，或先选择本地素材文件上传。', true);
         return;
       }
     }
 
     if (!isUrl(row.url) || !isUrl(row.thumbnail_url)) {
+      setActionStatus('mediaSaveStatus', '素材保存失败：链接不是有效的 http/https 地址。', true);
       setStatus('素材保存失败：链接不是有效的 http/https 地址', true);
       return;
     }
@@ -907,12 +921,15 @@ function bindSaves() {
     if (state.editing.media !== null && state.drafts.media[state.editing.media]) {
       state.drafts.media[state.editing.media] = row;
       state.editing.media = null;
+      setActionStatus('mediaSaveStatus', `素材信息已更新并保存到草稿库：${row.media_id}`);
       setStatus(`素材信息已更新：${row.media_id}`);
     } else if (sameIdMediaIdx !== -1) {
       state.drafts.media[sameIdMediaIdx] = row;
+      setActionStatus('mediaSaveStatus', `素材信息已按ID覆盖并保存到草稿库：${row.media_id}`);
       setStatus(`素材信息已按ID覆盖更新：${row.media_id}`);
     } else {
       state.drafts.media.push(row);
+      setActionStatus('mediaSaveStatus', `素材信息保存成功：${row.media_id}`);
       setStatus(`素材信息已保存：${row.media_id}`);
     }
     saveDrafts();
