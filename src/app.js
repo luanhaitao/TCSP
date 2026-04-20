@@ -120,9 +120,8 @@ function renderHeroBackdrop() {
     return;
   }
 
-  const maxTiles = Math.min(16, imageUrls.length);
-  const shuffled = [...imageUrls].sort(() => Math.random() - 0.5).slice(0, maxTiles);
-  const tiles = shuffled
+  const selected = imageUrls.slice(-3);
+  const tiles = selected
     .map((url, idx) => {
       const safeUrl = String(url).replaceAll('"', '%22').replaceAll("'", '%27');
       return `<span class="hero-tile hero-tile-${(idx % 4) + 1}" style="background-image:url(&quot;${safeUrl}&quot;)"></span>`;
@@ -352,10 +351,10 @@ async function boot() {
     renderArtifacts();
 
     if (issues.length) {
-      syncMetaEl.innerHTML = `最近同步：${nowLabel()} ｜ 来源：${raw.sourceMode} ｜ <span class="error">发现 ${issues.length} 项数据问题（请尽快修复表格）</span>`;
+      syncMetaEl.innerHTML = `最近同步：${nowLabel()} ｜ <span class="error">发现 ${issues.length} 项数据问题（请尽快修复表格）</span>`;
       console.warn('数据校验问题：', issues);
     } else {
-      syncMetaEl.textContent = `最近同步：${nowLabel()} ｜ 来源：${raw.sourceMode} ｜ 数据状态正常`;
+      syncMetaEl.textContent = `最近同步：${nowLabel()} ｜ 数据状态正常`;
     }
   } catch (error) {
     syncMetaEl.innerHTML = `<span class="error">数据载入失败：${error.message}</span>`;
