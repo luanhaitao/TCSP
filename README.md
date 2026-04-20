@@ -97,6 +97,36 @@ pkill -f "portal_server.mjs"
 nohup npm run serve:portal > portal.log 2>&1 &
 ```
 
+### 4.1) 旧机器 -> 新机器 一键迁移（强烈推荐）
+
+用途：避免“代码更新了但封面/素材丢失”。  
+迁移包会打包：
+- `data/`（三张表数据）
+- `uploads/`（教师上传的封面、图片、视频、PDF）
+
+在旧机器执行（导出）：
+
+```bash
+cd TCSP
+npm run migrate:export
+```
+
+成功后会生成：`backup/migrations/tcsp_migration_<时间戳>.tar.gz`
+
+把这个 `.tar.gz` 文件拷贝到新机器项目目录后，在新机器执行（导入）：
+
+```bash
+cd TCSP
+npm run migrate:import -- backup/migrations/tcsp_migration_2026-xx-xxTxx-xx-xx-xxxZ.tar.gz
+```
+
+导入完成后重启服务：
+
+```bash
+pkill -f "portal_server.mjs"
+nohup npm run serve:portal > portal.log 2>&1 &
+```
+
 ### 5) 可选：开机自启
 
 仓库已内置模板：
@@ -182,6 +212,10 @@ assetUpload: {
   }
 }
 ```
+
+局域网部署注意：
+- `publish.apiUrl` 建议使用相对路径 `'/api/publish'`（不要写 `http://localhost:8090/api/publish`）。
+- 原因：教师从其他终端访问时，`localhost` 指向教师自己的电脑，不是服务器。
 
 配置完成后，教师在收集器中只需：
 - 选择本地文件

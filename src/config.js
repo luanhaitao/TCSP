@@ -4,7 +4,7 @@ export const CONFIG = {
   autoRefreshMs: 0,
   publish: {
     enabled: true,
-    apiUrl: 'http://localhost:8090/api/publish',
+    apiUrl: '/api/publish',
     clearDraftsAfterPublish: true
   },
   assetUpload: {
