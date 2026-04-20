@@ -1197,13 +1197,10 @@ async function loadBaseData() {
       'loadStatus',
       `基础数据读取成功（来源：${raw.sourceMode}）。` + (hasAnyDraft() ? '草稿库已可编辑。' : '')
     );
-    setStatus(
-      `基础数据读取成功（来源：${raw.sourceMode}）。` +
-      (hasAnyDraft() ? '草稿库已可编辑。' : '')
-    );
+    setStatus('');
   } catch (error) {
     setActionStatus('loadStatus', `基础数据读取失败：${error.message}`, true);
-    setStatus(`基础数据读取失败，将只使用草稿库：${error.message}`, true);
+    setStatus('');
     refreshSelectOptions();
   }
 }

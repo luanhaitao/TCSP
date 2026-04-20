@@ -34,10 +34,15 @@ body {
 .top p { margin: 0; }
 .top-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
 .status { margin-top: 10px; font-size: 14px; opacity: 0.95; }
+.status:empty { display: none; }
 .action-status {
   margin: 6px 0 10px;
   font-size: 13px;
   color: var(--muted);
+}
+.top .action-status {
+  color: #f4fdff;
+  opacity: 0.95;
 }
 
 main {
