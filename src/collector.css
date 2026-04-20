@@ -34,6 +34,11 @@ body {
 .top p { margin: 0; }
 .top-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
 .status { margin-top: 10px; font-size: 14px; opacity: 0.95; }
+.action-status {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
 
 main {
   width: min(1100px, 92vw);

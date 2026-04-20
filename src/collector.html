@@ -14,6 +14,7 @@
         <a class="btn" href="./index.html">返回云展首页</a>
         <button id="loadBtn" class="btn btn-light" type="button">读取当前基础数据</button>
       </div>
+      <p id="loadStatus" class="action-status">点击后会拉取当前已发布数据到本页草稿库。</p>
       <p id="status" class="status">准备就绪</p>
     </header>
 
@@ -32,6 +33,7 @@
           <input id="clubImportFile" type="file" accept=".xlsx,.xls" />
           <button id="importClubBtn" class="btn" type="button">一键导入社团（Excel）</button>
         </div>
+        <p id="clubImportStatus" class="action-status">可先下载模板，再选择 Excel 一键导入。</p>
         <p class="small">模板字段为中文表头。导入时支持新增和按“社团ID”覆盖更新。</p>
         <div class="grid">
           <label>社团ID <span class="req">*</span>
@@ -58,6 +60,7 @@
                 <button id="uploadCoverBtn" type="button">上传并填入封面链接</button>
               </div>
             </label>
+            <p id="coverUploadStatus" class="action-status">上传成功后会自动填入“封面图链接”。</p>
           </div>
           <label>展示状态 <span class="req">*</span>
             <select id="status_field">
@@ -80,6 +83,7 @@
           <input id="artifactImportFile" type="file" accept=".xlsx,.xls" />
           <button id="importArtifactBtn" class="btn" type="button">一键导入成果（Excel）</button>
         </div>
+        <p id="artifactImportStatus" class="action-status">支持新增或按成果ID覆盖更新。</p>
         <p class="small">模板字段均为中文表头。导入时支持新增和按“成果ID”覆盖更新。</p>
         <div class="grid">
           <label>成果ID <span class="req">*</span>
@@ -152,9 +156,8 @@
     result1.png
   A003_图文报告展示/
     report.pdf</pre>
-    result2.png</pre>
         </details>
-        <p id="mediaImportResult" class="small"></p>
+        <p id="mediaImportResult" class="action-status">可选择素材根目录后开始一键导入。</p>
         <div class="grid">
           <label>素材ID <span class="req">*</span>
             <div class="inline">
@@ -186,6 +189,7 @@
                 <button id="uploadMediaBtn" type="button">上传并填入素材链接</button>
               </div>
             </label>
+            <p id="mediaUploadStatus" class="action-status">上传后会自动填入“素材URL”和素材类型。</p>
           </div>
           <label>视频缩略图URL<input id="thumbnail_url" placeholder="https://..." /></label>
           <label>版权状态<input id="copyright_status" placeholder="例如 学校授权" /></label>
@@ -205,6 +209,8 @@
           <button id="exportAllCsv" class="btn" type="button">导出三张 CSV</button>
           <button id="clearDrafts" class="btn btn-danger" type="button">清空全部草稿</button>
         </div>
+        <p id="publishStatus" class="action-status">发布后会自动合并并生效。</p>
+        <p id="exportStatus" class="action-status">导出会生成 3 个 CSV 文件。</p>
         <details open>
           <summary>社团草稿（club_profile）</summary>
           <div id="clubDrafts"></div>

@@ -118,6 +118,13 @@ function setStatus(text, isWarn = false) {
   el.className = isWarn ? 'status warn' : 'status';
 }
 
+function setActionStatus(id, text, isWarn = false) {
+  const el = byId(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = isWarn ? 'action-status warn' : 'action-status';
+}
+
 function setButtonBusy(buttonId, busyText, fn) {
   const btn = byId(buttonId);
   const oldText = btn.textContent;
@@ -558,8 +565,10 @@ function downloadClubTemplate() {
     XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
 
     XLSX.writeFile(wb, `社团信息导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setActionStatus('clubImportStatus', '社团模板下载成功，可直接填写后导入。');
     setStatus('社团模板下载成功，可直接填写后导入。');
   } catch (error) {
+    setActionStatus('clubImportStatus', `社团模板下载失败：${error.message}`, true);
     setStatus(`社团模板下载失败：${error.message}`, true);
   }
 }
@@ -567,10 +576,12 @@ function downloadClubTemplate() {
 async function importClubExcel() {
   const file = byId('clubImportFile').files?.[0];
   if (!file) {
+    setActionStatus('clubImportStatus', '请先选择要导入的社团 Excel 文件。', true);
     setStatus('请先选择要导入的社团 Excel 文件。', true);
     return;
   }
 
+  setActionStatus('clubImportStatus', '正在导入社团数据，请稍候...');
   await setButtonBusy('importClubBtn', '正在导入...', async () => {
     try {
       const XLSX = getXlsx();
@@ -610,8 +621,10 @@ async function importClubExcel() {
       saveDrafts();
       renderDrafts();
       refreshSelectOptions();
+      setActionStatus('clubImportStatus', `社团导入完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条。`);
       setStatus(`社团导入完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条。`);
     } catch (error) {
+      setActionStatus('clubImportStatus', `社团导入失败：${error.message}`, true);
       setStatus(`社团导入失败：${error.message}`, true);
     }
   });
@@ -678,8 +691,10 @@ function downloadArtifactTemplate() {
     XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
 
     XLSX.writeFile(wb, `学员成果导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setActionStatus('artifactImportStatus', '成果模板下载成功，可直接填写后导入。');
     setStatus('模板下载成功，可直接填写后导入。');
   } catch (error) {
+    setActionStatus('artifactImportStatus', `成果模板下载失败：${error.message}`, true);
     setStatus(`模板下载失败：${error.message}`, true);
   }
 }
@@ -687,10 +702,12 @@ function downloadArtifactTemplate() {
 async function importArtifactExcel() {
   const file = byId('artifactImportFile').files?.[0];
   if (!file) {
+    setActionStatus('artifactImportStatus', '请先选择要导入的 Excel 文件。', true);
     setStatus('请先选择要导入的 Excel 文件。', true);
     return;
   }
 
+  setActionStatus('artifactImportStatus', '正在导入成果数据，请稍候...');
   await setButtonBusy('importArtifactBtn', '正在导入...', async () => {
     try {
       const XLSX = getXlsx();
@@ -751,8 +768,10 @@ async function importArtifactExcel() {
       const extra = [];
       if (ambiguousClub) extra.push(`同名社团无法判定 ${ambiguousClub} 条（请改填社团ID）`);
       if (notFoundClub) extra.push(`未匹配到社团 ${notFoundClub} 条`);
+      setActionStatus('artifactImportStatus', `导入完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条。${extra.join('；')}`);
       setStatus(`导入完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条。${extra.join('；')}`);
     } catch (error) {
+      setActionStatus('artifactImportStatus', `导入失败：${error.message}`, true);
       setStatus(`导入失败：${error.message}`, true);
     }
   });
@@ -950,12 +969,14 @@ function bindExports() {
     downloadCsv(`club_profile_draft_${ts}.csv`, toCsv(CLUB_HEADERS, state.drafts.clubs));
     downloadCsv(`student_artifact_draft_${ts}.csv`, toCsv(ARTIFACT_HEADERS, state.drafts.artifacts));
     downloadCsv(`media_asset_draft_${ts}.csv`, toCsv(MEDIA_HEADERS, state.drafts.media));
+    setActionStatus('exportStatus', 'CSV 导出完成（共 3 个文件）。');
     setStatus('CSV 导出完成（共 3 个文件）');
   });
 }
 
 async function publishDrafts() {
   if (!CONFIG.publish?.enabled) {
+    setActionStatus('publishStatus', '自动发布未启用，请联系管理员开启。', true);
     setStatus('自动发布未启用，请联系管理员在 config.js 开启 publish.enabled', true);
     return;
   }
@@ -965,10 +986,12 @@ async function publishDrafts() {
   const media = state.drafts.media;
 
   if (!clubs.length && !artifacts.length && !media.length) {
+    setActionStatus('publishStatus', '暂无可发布草稿，请先保存草稿。', true);
     setStatus('暂无可发布草稿，请先录入数据并保存到草稿库', true);
     return;
   }
 
+  setActionStatus('publishStatus', '正在自动发布，请稍候...');
   setStatus('正在自动发布，请稍候...');
 
   try {
@@ -996,11 +1019,16 @@ async function publishDrafts() {
     }
 
     await loadBaseData();
+    setActionStatus(
+      'publishStatus',
+      `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。`
+    );
     setStatus(
       `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。` +
       `（已自动备份：${result.backupDir || 'N/A'}）`
     );
   } catch (error) {
+    setActionStatus('publishStatus', `自动发布失败：${error.message}`, true);
     setStatus(
       `自动发布失败：${error.message}。如你暂时无法接入发布服务，可先用“导出三张 CSV”作为备用流程。`,
       true
@@ -1015,20 +1043,25 @@ function bindOwnerTypeChange() {
 async function uploadCoverFile() {
   const file = byId('cover_file').files?.[0];
   if (!file) {
+    setActionStatus('coverUploadStatus', '请先选择封面图片文件。', true);
     setStatus('请先选择封面图片文件', true);
     return;
   }
+  setActionStatus('coverUploadStatus', '正在上传封面图片，请稍候...');
   setStatus('正在上传封面图片，请稍候...');
   await setButtonBusy('uploadCoverBtn', '正在上传...', async () => {
     try {
       const result = await uploadLocalFile(file, { publicId: `club_cover_${Date.now()}` });
       if (result.mediaType !== 'image') {
+        setActionStatus('coverUploadStatus', '封面上传失败：请选择图片文件。', true);
         setStatus('封面上传失败：请选择图片文件', true);
         return;
       }
       byId('cover_url').value = result.url;
+      setActionStatus('coverUploadStatus', '封面上传成功，已自动填入封面链接。');
       setStatus('封面上传成功，已自动填入封面链接');
     } catch (error) {
+      setActionStatus('coverUploadStatus', error.message, true);
       setStatus(error.message, true);
     }
   });
@@ -1037,9 +1070,11 @@ async function uploadCoverFile() {
 async function uploadMediaFile() {
   const file = byId('media_file').files?.[0];
   if (!file) {
+    setActionStatus('mediaUploadStatus', '请先选择素材文件（图片、视频或PDF）。', true);
     setStatus('请先选择素材文件（图片或视频）', true);
     return;
   }
+  setActionStatus('mediaUploadStatus', '正在上传素材文件，请稍候...');
   setStatus('正在上传素材文件，请稍候...');
   await setButtonBusy('uploadMediaBtn', '正在上传...', async () => {
     try {
@@ -1047,11 +1082,14 @@ async function uploadMediaFile() {
       byId('media_url').value = result.url;
       byId('media_type').value = result.mediaType;
       if (result.mediaType === 'video' && !byId('thumbnail_url').value.trim()) {
+        setActionStatus('mediaUploadStatus', '视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
         setStatus('视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
         return;
       }
+      setActionStatus('mediaUploadStatus', '素材上传成功，已自动填入素材链接。');
       setStatus('素材上传成功，已自动填入素材链接');
     } catch (error) {
+      setActionStatus('mediaUploadStatus', error.message, true);
       setStatus(error.message, true);
     }
   });
@@ -1072,11 +1110,16 @@ async function loadBaseData() {
       renderDrafts();
     }
     refreshSelectOptions();
+    setActionStatus(
+      'loadStatus',
+      `基础数据读取成功（来源：${raw.sourceMode}）。` + (hasAnyDraft() ? '草稿库已可编辑。' : '')
+    );
     setStatus(
       `基础数据读取成功（来源：${raw.sourceMode}）。` +
       (hasAnyDraft() ? '草稿库已可编辑。' : '')
     );
   } catch (error) {
+    setActionStatus('loadStatus', `基础数据读取失败：${error.message}`, true);
     setStatus(`基础数据读取失败，将只使用草稿库：${error.message}`, true);
     refreshSelectOptions();
   }
@@ -1182,16 +1225,17 @@ function pushMediaDraftRows(rows) {
 
 async function importMediaFromFolder() {
   const input = byId('mediaFolderInput');
-  const resultEl = byId('mediaImportResult');
   const files = Array.from(input.files || []);
-  resultEl.textContent = '';
+  setActionStatus('mediaImportResult', '');
 
   if (!files.length) {
+    setActionStatus('mediaImportResult', '请先选择素材根目录。', true);
     setStatus('请先选择素材根目录。', true);
     return;
   }
 
   if (!CONFIG.assetUpload?.enabled) {
+    setActionStatus('mediaImportResult', '未启用上传功能，无法执行目录导入。', true);
     setStatus('未启用上传功能，无法执行目录导入。', true);
     return;
   }
@@ -1199,11 +1243,12 @@ async function importMediaFromFolder() {
   const analyzed = analyzeMediaFolderFiles(files);
   if (!analyzed.ok) {
     const summary = issueSummaryText(analyzed.issues);
-    resultEl.textContent = `预检未通过：${summary}`;
+    setActionStatus('mediaImportResult', `预检未通过：${summary}`, true);
     setStatus(`目录预检失败：${summary}。请先按命名规则修正后再导入。`, true);
     return;
   }
 
+  setActionStatus('mediaImportResult', '目录预检通过，正在导入并上传...');
   await setButtonBusy('importMediaFolderBtn', '正在导入...', async () => {
     const total = analyzed.entries.length;
     const images = analyzed.entries.filter((e) => e.mediaType === 'image');
@@ -1220,7 +1265,7 @@ async function importMediaFromFolder() {
 
     let done = 0;
     const updateProgress = () => {
-      resultEl.textContent = `正在上传：${done}/${total}`;
+      setActionStatus('mediaImportResult', `正在上传：${done}/${total}`);
     };
     updateProgress();
 
@@ -1294,7 +1339,7 @@ async function importMediaFromFolder() {
     pushMediaDraftRows(rowsToAppend);
     const skipCount = stats.failedUpload;
     const summary = `导入完成：成功 ${stats.success} 条，跳过 ${skipCount} 条，上传失败 ${stats.failedUpload} 条。`;
-    resultEl.textContent = summary;
+    setActionStatus('mediaImportResult', summary);
     setStatus(summary);
   });
 }
