@@ -416,15 +416,32 @@ function downloadBlob(filename, blob) {
 
 function downloadXlsxWorkbook(wb, filename) {
   const XLSX = getXlsx();
-  if (typeof XLSX.writeFile === 'function') {
-    XLSX.writeFile(wb, filename);
-    return;
-  }
-  const bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  const blob = new Blob([bytes], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  const bytes = XLSX.write(wb, {
+    bookType: 'xlsx',
+    type: 'array',
+    compression: true
   });
-  downloadBlob(filename, blob);
+  const blob = new Blob([bytes], {
+    type: 'application/octet-stream'
+  });
+  try {
+    downloadBlob(filename, blob);
+    return;
+  } catch (error) {
+    // 兜底：极少数浏览器对 Blob 下载处理异常，降级为 Data URL。
+    const reader = new FileReader();
+    reader.onload = () => {
+      const a = document.createElement('a');
+      a.href = String(reader.result || '');
+      a.download = filename;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+    reader.readAsDataURL(blob);
+  }
 }
 
 function triggerServerDownload(url) {

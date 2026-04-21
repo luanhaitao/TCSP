@@ -894,7 +894,16 @@ async function serveStatic(req, res, pathname) {
     const ext = path.extname(target).toLowerCase();
     const mime = MIME[ext] || 'application/octet-stream';
     const content = await fs.readFile(target);
-    res.writeHead(200, { 'Content-Type': mime });
+    const headers = { 'Content-Type': mime };
+    if (safePath.startsWith('/src/')) {
+      headers['Cache-Control'] = 'no-store, no-cache, must-revalidate';
+      headers.Pragma = 'no-cache';
+      headers.Expires = '0';
+    }
+    if (safePath.startsWith('/data/')) {
+      headers['Cache-Control'] = 'no-store';
+    }
+    res.writeHead(200, headers);
     res.end(content);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
