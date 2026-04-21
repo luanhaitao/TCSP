@@ -189,6 +189,10 @@ function getXlsx() {
   return xlsx;
 }
 
+function tryGetXlsx() {
+  return globalThis.XLSX || null;
+}
+
 function nowText() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -232,6 +236,16 @@ function downloadCsv(filename, content) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadCsvTemplatePair(baseName, headers, sampleRow, guideRows = []) {
+  const date = new Date().toISOString().slice(0, 10);
+  const templateName = `${baseName}_${date}.csv`;
+  const guideName = `${baseName}_填写说明_${date}.csv`;
+  downloadCsv(templateName, toCsv(headers, [sampleRow]));
+  if (guideRows.length) {
+    downloadCsv(guideName, toCsv(['项目', '说明'], guideRows));
+  }
 }
 
 function required(v) {
@@ -593,7 +607,7 @@ function upsertClubDraft(row) {
 
 function downloadClubTemplate() {
   try {
-    const XLSX = getXlsx();
+    const XLSX = tryGetXlsx();
     const sample = {
       社团ID: '',
       社团名称: '智能编程社',
@@ -609,10 +623,6 @@ function downloadClubTemplate() {
       封面图链接: '/uploads/2026-04/example_cover.jpg',
       展示状态: 'active'
     };
-    const ws = XLSX.utils.json_to_sheet([sample], { header: CLUB_CN_HEADERS });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '社团信息导入模板');
-
     const guideRows = [
       { 项目: '社团类别（展馆类别）推荐值', 说明: '建议使用以下统一类别，便于首页分馆展示与筛选。' },
       { 项目: '可选类别1', 说明: '智能编程馆' },
@@ -621,12 +631,21 @@ function downloadClubTemplate() {
       { 项目: '可选类别4', 说明: '数字创意馆' },
       { 项目: '填写建议', 说明: '尽量从上述类别中选择，不建议自由发挥写法。' }
     ];
-    const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
-    XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
+    if (XLSX) {
+      const ws = XLSX.utils.json_to_sheet([sample], { header: CLUB_CN_HEADERS });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '社团信息导入模板');
+      const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
+      XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
+      XLSX.writeFile(wb, `社团信息导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      setActionStatus('clubImportStatus', '社团模板下载成功，可直接填写后导入。');
+      setStatus('社团模板下载成功，可直接填写后导入。');
+      return;
+    }
 
-    XLSX.writeFile(wb, `社团信息导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    setActionStatus('clubImportStatus', '社团模板下载成功，可直接填写后导入。');
-    setStatus('社团模板下载成功，可直接填写后导入。');
+    downloadCsvTemplatePair('社团信息导入模板', CLUB_CN_HEADERS, sample, guideRows);
+    setActionStatus('clubImportStatus', 'Excel组件不可用，已自动下载 CSV 模板与填写说明。');
+    setStatus('已下载 CSV 模板（离线模式）。');
   } catch (error) {
     setActionStatus('clubImportStatus', `社团模板下载失败：${error.message}`, true);
     setStatus(`社团模板下载失败：${error.message}`, true);
@@ -726,7 +745,7 @@ function upsertArtifactDraft(row) {
 
 function downloadArtifactTemplate() {
   try {
-    const XLSX = getXlsx();
+    const XLSX = tryGetXlsx();
     const sample = {
       成果ID: '',
       学员姓名: '张三',
@@ -741,10 +760,6 @@ function downloadArtifactTemplate() {
       成长证据: '经过两轮迭代优化',
       教师简评: '表达清晰，过程完整',
     };
-    const ws = XLSX.utils.json_to_sheet([sample], { header: ARTIFACT_CN_HEADERS });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '学员成果导入模板');
-
     const guideRows = [
       { 项目: '学员姓名字段填写规则', 说明: '可填写多人姓名（用“、”分隔）或直接填写小组名称。' },
       { 项目: '多人示例', 说明: '学员姓名 = 张三、李四、王五' },
@@ -753,12 +768,21 @@ function downloadArtifactTemplate() {
       { 项目: '推荐写法', 说明: '所属社团 = 智能编程社' },
       { 项目: '重名写法', 说明: '所属社团 = C001' }
     ];
-    const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
-    XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
+    if (XLSX) {
+      const ws = XLSX.utils.json_to_sheet([sample], { header: ARTIFACT_CN_HEADERS });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '学员成果导入模板');
+      const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
+      XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
+      XLSX.writeFile(wb, `学员成果导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      setActionStatus('artifactImportStatus', '成果模板下载成功，可直接填写后导入。');
+      setStatus('模板下载成功，可直接填写后导入。');
+      return;
+    }
 
-    XLSX.writeFile(wb, `学员成果导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    setActionStatus('artifactImportStatus', '成果模板下载成功，可直接填写后导入。');
-    setStatus('模板下载成功，可直接填写后导入。');
+    downloadCsvTemplatePair('学员成果导入模板', ARTIFACT_CN_HEADERS, sample, guideRows);
+    setActionStatus('artifactImportStatus', 'Excel组件不可用，已自动下载 CSV 模板与填写说明。');
+    setStatus('已下载 CSV 模板（离线模式）。');
   } catch (error) {
     setActionStatus('artifactImportStatus', `成果模板下载失败：${error.message}`, true);
     setStatus(`模板下载失败：${error.message}`, true);
