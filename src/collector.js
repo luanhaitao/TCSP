@@ -416,6 +416,10 @@ function downloadBlob(filename, blob) {
 
 function downloadXlsxWorkbook(wb, filename) {
   const XLSX = getXlsx();
+  if (typeof XLSX.writeFile === 'function') {
+    XLSX.writeFile(wb, filename);
+    return;
+  }
   const bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -862,9 +866,7 @@ function downloadClubTemplate() {
       return;
     }
 
-    downloadCsvTemplatePair('club_template', CLUB_CN_HEADERS, sample, guideRows);
-    setActionStatus('clubImportStatus', 'Excel组件不可用，已自动下载 CSV 模板与填写说明。');
-    setStatus('已下载 CSV 模板（离线模式）。');
+    throw new Error('模板下载失败：Excel组件未加载成功，请检查网络后重试。');
   } catch (error) {
     setActionStatus('clubImportStatus', `社团模板下载失败：${error.message}`, true);
     setStatus(`社团模板下载失败：${error.message}`, true);
@@ -999,9 +1001,7 @@ function downloadArtifactTemplate() {
       return;
     }
 
-    downloadCsvTemplatePair('artifact_template', ARTIFACT_CN_HEADERS, sample, guideRows);
-    setActionStatus('artifactImportStatus', 'Excel组件不可用，已自动下载 CSV 模板与填写说明。');
-    setStatus('已下载 CSV 模板（离线模式）。');
+    throw new Error('模板下载失败：Excel组件未加载成功，请检查网络后重试。');
   } catch (error) {
     setActionStatus('artifactImportStatus', `成果模板下载失败：${error.message}`, true);
     setStatus(`模板下载失败：${error.message}`, true);
