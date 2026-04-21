@@ -7,6 +7,10 @@ export const CONFIG = {
     apiUrl: '/api/publish',
     clearDraftsAfterPublish: true
   },
+  auth: {
+    enabled: true,
+    adminNames: ['科技组管理员']
+  },
   assetUpload: {
     enabled: true,
     provider: 'local',

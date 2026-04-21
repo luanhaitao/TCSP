@@ -1,8 +1,8 @@
 import { CONFIG } from './config.js';
-import { loadAllTables } from './data-source.js';
 import { uploadLocalFile } from './uploader.js';
 
 const STORAGE_KEY = 'tcsp_collector_drafts_v1';
+const AUTH_USER_KEY = 'tcsp_collector_auth_user_v1';
 
 const CLUB_HEADERS = [
   'club_id', 'club_name', 'teacher', 'grade_range', 'student_count', 'club_category', 'intro',
@@ -128,11 +128,163 @@ const state = {
     clubs: null,
     artifacts: null,
     media: null
+  },
+  auth: {
+    ready: false,
+    authenticated: false,
+    role: '',
+    displayName: '',
+    clubIds: []
   }
 };
 
 function byId(id) {
   return document.getElementById(id);
+}
+
+async function apiJson(url, options = {}) {
+  const resp = await fetch(url, {
+    credentials: 'same-origin',
+    ...options
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data?.ok === false) {
+    const msg = data?.message || `HTTP ${resp.status}`;
+    const err = new Error(msg);
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
+}
+
+function applyAuthUi() {
+  const main = byId('collectorMain');
+  const loginBox = byId('loginBox');
+  const sessionBox = byId('sessionBox');
+  const authSummary = byId('authSummary');
+  if (!main || !loginBox || !sessionBox || !authSummary) return;
+
+  if (!state.auth.authenticated) {
+    main.classList.add('is-hidden');
+    loginBox.classList.remove('is-hidden');
+    sessionBox.classList.add('is-hidden');
+    authSummary.textContent = '';
+    return;
+  }
+
+  main.classList.remove('is-hidden');
+  loginBox.classList.add('is-hidden');
+  sessionBox.classList.remove('is-hidden');
+  if (state.auth.role === 'admin') {
+    authSummary.textContent = `当前身份：超级管理员（${state.auth.displayName}）`;
+  } else {
+    const clubNameMap = new Map((state.base.clubs || []).map((c) => [String(c.club_id || ''), String(c.club_name || '').trim()]));
+    const labels = (state.auth.clubIds || [])
+      .map((id) => {
+        const name = clubNameMap.get(String(id)) || '';
+        return name;
+      })
+      .filter(Boolean);
+    const clubText = labels.length ? `（${labels.join('、')}）` : '';
+    authSummary.textContent = `当前身份：教师（${state.auth.displayName}），可管理社团 ${state.auth.clubIds.length} 个${clubText}`;
+  }
+}
+
+function setLoginStatus(text, isWarn = false) {
+  const el = byId('loginStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.className = isWarn ? 'action-status warn' : 'action-status';
+}
+
+async function checkAuth() {
+  if (!CONFIG.auth?.enabled) {
+    state.auth = {
+      ready: true,
+      authenticated: true,
+      role: 'admin',
+      displayName: '本地模式',
+      clubIds: []
+    };
+    applyAuthUi();
+    return state.auth;
+  }
+
+  try {
+    const data = await apiJson('/api/auth/me');
+    state.auth = {
+      ready: true,
+      authenticated: Boolean(data.authenticated),
+      role: data.role || '',
+      displayName: data.displayName || '',
+      clubIds: Array.isArray(data.clubIds) ? data.clubIds : []
+    };
+    applyAuthUi();
+    return state.auth;
+  } catch {
+    state.auth = {
+      ready: true,
+      authenticated: false,
+      role: '',
+      displayName: '',
+      clubIds: []
+    };
+    applyAuthUi();
+    return state.auth;
+  }
+}
+
+function bindAuthActions() {
+  const loginBtn = byId('loginBtn');
+  const logoutBtn = byId('logoutBtn');
+  const loginName = byId('loginName');
+  if (!loginBtn || !logoutBtn || !loginName) return;
+
+  loginBtn.addEventListener('click', async () => {
+    const name = String(loginName.value || '').trim();
+    if (!name) {
+      setLoginStatus('请输入姓名后再登录。', true);
+      return;
+    }
+    loginBtn.disabled = true;
+    loginBtn.textContent = '正在登录...';
+    try {
+      await apiJson('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      await checkAuth();
+      setLoginStatus('登录成功，正在载入你的数据...');
+      const fingerprint = `${state.auth.role}|${state.auth.displayName}|${(state.auth.clubIds || []).slice().sort().join(',')}`;
+      localStorage.setItem(AUTH_USER_KEY, fingerprint);
+      await loadBaseData(true);
+      setLoginStatus('登录成功。你现在可以维护权限范围内的数据。');
+    } catch (error) {
+      setLoginStatus(`登录失败：${error.message}`, true);
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = '进入收集器';
+    }
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await apiJson('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // ignore
+    }
+    state.auth = {
+      ready: true,
+      authenticated: false,
+      role: '',
+      displayName: '',
+      clubIds: []
+    };
+    localStorage.removeItem(AUTH_USER_KEY);
+    applyAuthUi();
+    setLoginStatus('已退出登录。');
+  });
 }
 
 function loadDrafts() {
@@ -376,6 +528,24 @@ function allMedia() {
 
 function hasAnyDraft() {
   return state.drafts.clubs.length > 0 || state.drafts.artifacts.length > 0 || state.drafts.media.length > 0;
+}
+
+function applyDraftScopeByBase() {
+  const clubSet = new Set((state.base.clubs || []).map((c) => String(c.club_id || '').trim()).filter(Boolean));
+  const baseArtifactSet = new Set((state.base.artifacts || []).map((a) => String(a.artifact_id || '').trim()).filter(Boolean));
+
+  state.drafts.clubs = state.drafts.clubs.filter((row) => clubSet.has(String(row.club_id || '').trim()));
+  state.drafts.artifacts = state.drafts.artifacts.filter((row) => clubSet.has(String(row.club_id || '').trim()));
+
+  const draftArtifactSet = new Set(state.drafts.artifacts.map((a) => String(a.artifact_id || '').trim()).filter(Boolean));
+  const allowedArtifactSet = new Set([...baseArtifactSet, ...draftArtifactSet]);
+  state.drafts.media = state.drafts.media.filter((row) => {
+    const ownerType = String(row.owner_type || '').trim();
+    const ownerId = String(row.owner_id || '').trim();
+    if (ownerType === 'club') return clubSet.has(ownerId);
+    if (ownerType === 'artifact') return allowedArtifactSet.has(ownerId);
+    return false;
+  });
 }
 
 function buildClubNameCountMap(clubs) {
@@ -1145,6 +1315,7 @@ async function publishDrafts() {
   try {
     const resp = await fetch(CONFIG.publish.apiUrl, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         clubs,
@@ -1169,7 +1340,10 @@ async function publishDrafts() {
     await loadBaseData();
     setActionStatus(
       'publishStatus',
-      `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。`
+      `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。` +
+      ((result.blocked && (result.blocked.clubs + result.blocked.artifacts + result.blocked.media) > 0)
+        ? `（已拦截越权草稿 ${result.blocked.clubs + result.blocked.artifacts + result.blocked.media} 条）`
+        : '')
     );
     setStatus(
       `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。` +
@@ -1262,28 +1436,42 @@ async function uploadMediaFile() {
   });
 }
 
-async function loadBaseData() {
+async function loadBaseData(forceSyncDrafts = false) {
+  if (CONFIG.auth?.enabled && !state.auth.authenticated) {
+    setActionStatus('loadStatus', '请先完成登录。', true);
+    setStatus('');
+    return;
+  }
   try {
-    const raw = await loadAllTables();
+    const raw = await apiJson('/api/collector/base');
     state.base = raw;
-    if (!hasAnyDraft()) {
+    applyDraftScopeByBase();
+    if (forceSyncDrafts || !hasAnyDraft()) {
       // 教师首次使用时，自动把已发布数据加载到草稿库，便于直接编辑维护
       state.drafts = {
         clubs: [...raw.clubs],
         artifacts: [...raw.artifacts],
         media: [...raw.media]
       };
-      saveDrafts();
-      renderDrafts();
     }
+    saveDrafts();
+    renderDrafts();
     refreshSelectOptions();
+    applyAuthUi();
     setActionStatus(
       'loadStatus',
-      `基础数据读取成功（来源：${raw.sourceMode}）。` + (hasAnyDraft() ? '草稿库已可编辑。' : '')
+      `基础数据读取成功（来源：${raw.sourceMode || 'local'}）。` + (hasAnyDraft() ? '草稿库已可编辑。' : '')
     );
     setStatus('');
   } catch (error) {
-    setActionStatus('loadStatus', `基础数据读取失败：${error.message}`, true);
+    if (error?.status === 401) {
+      state.auth.authenticated = false;
+      applyAuthUi();
+      setLoginStatus('登录已失效，请重新输入姓名登录。', true);
+      setActionStatus('loadStatus', '基础数据读取失败：登录已失效。', true);
+    } else {
+      setActionStatus('loadStatus', `基础数据读取失败：${error.message}`, true);
+    }
     setStatus('');
     refreshSelectOptions();
   }
@@ -1557,6 +1745,7 @@ function bindPublishAction() {
 }
 
 function init() {
+  bindAuthActions();
   bindTabs();
   bindGenerators();
   bindSaves();
@@ -1572,7 +1761,6 @@ function init() {
   tuneMediaUrlFieldByMode();
   setDefaults();
   renderDrafts();
-  loadBaseData();
   byId('updated_at').value = nowText();
   byId('club_id').value = nextId('C', state.base.clubs, state.drafts.clubs, 'club_id');
   byId('artifact_id').value = nextId('A', state.base.artifacts, state.drafts.artifacts, 'artifact_id');
@@ -1587,4 +1775,19 @@ function init() {
   }
 }
 
-init();
+async function bootstrap() {
+  init();
+  await checkAuth();
+  if (state.auth.authenticated) {
+    const fingerprint = `${state.auth.role}|${state.auth.displayName}|${(state.auth.clubIds || []).slice().sort().join(',')}`;
+    const lastFingerprint = localStorage.getItem(AUTH_USER_KEY) || '';
+    const needForceSync = fingerprint !== lastFingerprint;
+    localStorage.setItem(AUTH_USER_KEY, fingerprint);
+    await loadBaseData(needForceSync);
+    setLoginStatus('已验证身份，可维护权限范围内数据。');
+  } else {
+    setLoginStatus('请先输入姓名并登录后进入收集器。');
+  }
+}
+
+bootstrap();

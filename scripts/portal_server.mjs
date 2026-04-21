@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import url from 'node:url';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { parseCsv } from './shared_csv.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -12,6 +13,9 @@ const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB || 300) * 1024 * 1024;
 const DATA_DIR = path.resolve(process.env.TCSP_DATA_DIR || path.join(ROOT, 'data'));
 const UPLOADS_DIR = path.resolve(process.env.TCSP_UPLOADS_DIR || path.join(ROOT, 'uploads'));
 const BACKUP_DIR = path.resolve(process.env.TCSP_BACKUP_DIR || path.join(ROOT, 'backup'));
+const SESSION_COOKIE = 'tcsp_sid';
+const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const sessions = new Map();
 
 const CLUB_HEADERS = [
   'club_id', 'club_name', 'teacher', 'grade_range', 'student_count', 'club_category', 'intro',
@@ -66,7 +70,8 @@ function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true'
   };
 }
 
@@ -147,6 +152,169 @@ async function ensureRuntimeDirs() {
   await fs.mkdir(BACKUP_DIR, { recursive: true });
 }
 
+function parseCookies(req) {
+  const raw = String(req.headers.cookie || '');
+  const out = {};
+  raw.split(';').forEach((part) => {
+    const idx = part.indexOf('=');
+    if (idx === -1) return;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (!k) return;
+    out[k] = decodeURIComponent(v);
+  });
+  return out;
+}
+
+function makeCookie(name, value, maxAgeSec) {
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}`;
+}
+
+function clearCookie(name) {
+  return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [sid, session] of sessions.entries()) {
+    if (!session?.expiresAt || session.expiresAt <= now) sessions.delete(sid);
+  }
+}
+
+function createSession(payload) {
+  cleanupExpiredSessions();
+  const sid = crypto.randomUUID();
+  sessions.set(sid, {
+    ...payload,
+    expiresAt: Date.now() + SESSION_TTL_MS
+  });
+  return sid;
+}
+
+function getSession(req) {
+  cleanupExpiredSessions();
+  const sid = parseCookies(req)[SESSION_COOKIE];
+  if (!sid) return null;
+  const session = sessions.get(sid);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(sid);
+    return null;
+  }
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return { sid, ...session };
+}
+
+async function getAdminNames() {
+  try {
+    const cfg = await fs.readFile(path.join(ROOT, 'src', 'config.js'), 'utf8');
+    const authBlock = cfg.match(/auth\s*:\s*\{[\s\S]*?\}/m)?.[0] || '';
+    const listBody = authBlock.match(/adminNames\s*:\s*\[([\s\S]*?)\]/m)?.[1] || '';
+    const list = [...listBody.matchAll(/['"]([^'"]+)['"]/g)].map((m) => String(m[1]).trim()).filter(Boolean);
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+async function resolveLoginByName(name) {
+  const displayName = String(name || '').trim();
+  if (!displayName) return { ok: false, message: '姓名不能为空。' };
+
+  const adminNames = await getAdminNames();
+  if (adminNames.includes(displayName)) {
+    return { ok: true, role: 'admin', displayName, clubIds: [] };
+  }
+
+  const clubs = await readCsvFile(path.join(DATA_DIR, 'club_profile.csv'));
+  const clubIds = clubs
+    .filter((c) => String(c.teacher || '').trim() === displayName)
+    .map((c) => String(c.club_id || '').trim())
+    .filter(Boolean);
+
+  if (!clubIds.length) {
+    return { ok: false, message: '登录失败：你不是当前社团执教教师，无法进入收集器。' };
+  }
+  return { ok: true, role: 'teacher', displayName, clubIds: [...new Set(clubIds)] };
+}
+
+function unauthorized(res, message = '未登录或登录已失效，请先登录。') {
+  return json(res, 401, { ok: false, message });
+}
+
+function forbidden(res, message = '无权限执行该操作。') {
+  return json(res, 403, { ok: false, message });
+}
+
+function isTeacherSession(session) {
+  return session?.role === 'teacher';
+}
+
+function isAdminSession(session) {
+  return session?.role === 'admin';
+}
+
+async function loadAllBaseTables() {
+  const clubs = await readCsvFile(path.join(DATA_DIR, 'club_profile.csv'));
+  const artifacts = await readCsvFile(path.join(DATA_DIR, 'student_artifact.csv'));
+  const media = await readCsvFile(path.join(DATA_DIR, 'media_asset.csv'));
+  return { clubs, artifacts, media };
+}
+
+function filterBaseByScope(base, clubIds) {
+  const clubSet = new Set((clubIds || []).map((v) => String(v)));
+  const clubs = base.clubs.filter((c) => clubSet.has(String(c.club_id || '')));
+  const artifacts = base.artifacts.filter((a) => clubSet.has(String(a.club_id || '')));
+  const artifactSet = new Set(artifacts.map((a) => String(a.artifact_id || '')));
+  const media = base.media.filter((m) => {
+    const ownerType = String(m.owner_type || '');
+    const ownerId = String(m.owner_id || '');
+    if (ownerType === 'club') return clubSet.has(ownerId);
+    if (ownerType === 'artifact') return artifactSet.has(ownerId);
+    return false;
+  });
+  return { clubs, artifacts, media };
+}
+
+function scopeFilterIncomingDrafts(session, incoming, existingArtifacts) {
+  if (isAdminSession(session)) {
+    return {
+      clubs: incoming.clubs,
+      artifacts: incoming.artifacts,
+      media: incoming.media,
+      blocked: { clubs: 0, artifacts: 0, media: 0 }
+    };
+  }
+
+  const clubSet = new Set((session.clubIds || []).map((v) => String(v)));
+  const clubs = incoming.clubs.filter((row) => clubSet.has(String(row.club_id || '').trim()));
+  const artifacts = incoming.artifacts.filter((row) => clubSet.has(String(row.club_id || '').trim()));
+  const allowedArtifactSet = new Set([
+    ...existingArtifacts
+      .filter((a) => clubSet.has(String(a.club_id || '').trim()))
+      .map((a) => String(a.artifact_id || '').trim()),
+    ...artifacts.map((a) => String(a.artifact_id || '').trim())
+  ].filter(Boolean));
+  const media = incoming.media.filter((row) => {
+    const ownerType = String(row.owner_type || '').trim();
+    const ownerId = String(row.owner_id || '').trim();
+    if (ownerType === 'club') return clubSet.has(ownerId);
+    if (ownerType === 'artifact') return allowedArtifactSet.has(ownerId);
+    return false;
+  });
+
+  return {
+    clubs,
+    artifacts,
+    media,
+    blocked: {
+      clubs: incoming.clubs.length - clubs.length,
+      artifacts: incoming.artifacts.length - artifacts.length,
+      media: incoming.media.length - media.length
+    }
+  };
+}
+
 async function appendJsonLine(filePath, payload) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.appendFile(filePath, `${JSON.stringify(payload)}\n`, 'utf8');
@@ -170,6 +338,15 @@ async function backupUploadedFile(targetPath, dateDir, targetName, meta) {
 function json(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
+    ...corsHeaders()
+  });
+  res.end(JSON.stringify(data));
+}
+
+function jsonWithCookie(res, statusCode, data, cookieValue) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Set-Cookie': cookieValue,
     ...corsHeaders()
   });
   res.end(JSON.stringify(data));
@@ -381,6 +558,8 @@ async function extractVideoFirstFrame(videoPath, outputPath) {
 
 async function handleUpload(req, res) {
   try {
+    const session = getSession(req);
+    if (!session) return unauthorized(res);
     await ensureRuntimeDirs();
     const contentType = req.headers['content-type'] || '';
     const match = String(contentType).match(/multipart\/form-data;\s*boundary=(.+)$/i);
@@ -474,6 +653,8 @@ async function handleUpload(req, res) {
 
 async function handlePublish(req, res) {
   try {
+    const session = getSession(req);
+    if (!session) return unauthorized(res);
     await ensureRuntimeDirs();
     const body = await parseJsonBody(req);
 
@@ -485,8 +666,6 @@ async function handlePublish(req, res) {
       return json(res, 400, { ok: false, message: '草稿为空，暂无可发布数据。' });
     }
 
-    const backupDir = await backupBeforeWrite();
-
     const clubFile = path.join(DATA_DIR, 'club_profile.csv');
     const artifactFile = path.join(DATA_DIR, 'student_artifact.csv');
     const mediaFile = path.join(DATA_DIR, 'media_asset.csv');
@@ -495,9 +674,17 @@ async function handlePublish(req, res) {
     const existingArtifacts = await readCsvFile(artifactFile);
     const existingMedia = await readCsvFile(mediaFile);
 
-    const mergedClubs = clubs.length ? upsertById(existingClubs, clubs, 'club_id', CLUB_HEADERS) : existingClubs;
-    const mergedArtifacts = artifacts.length ? upsertById(existingArtifacts, artifacts, 'artifact_id', ARTIFACT_HEADERS) : existingArtifacts;
-    const mergedMedia = media.length ? upsertById(existingMedia, media, 'media_id', MEDIA_HEADERS) : existingMedia;
+    const scoped = scopeFilterIncomingDrafts(session, { clubs, artifacts, media }, existingArtifacts);
+    if (!scoped.clubs.length && !scoped.artifacts.length && !scoped.media.length) {
+      const blockedTotal = scoped.blocked.clubs + scoped.blocked.artifacts + scoped.blocked.media;
+      return forbidden(res, blockedTotal > 0 ? `发布失败：无可发布数据，已拦截 ${blockedTotal} 条越权草稿。` : '发布失败：当前账号无可发布数据。');
+    }
+
+    const backupDir = await backupBeforeWrite();
+
+    const mergedClubs = scoped.clubs.length ? upsertById(existingClubs, scoped.clubs, 'club_id', CLUB_HEADERS) : existingClubs;
+    const mergedArtifacts = scoped.artifacts.length ? upsertById(existingArtifacts, scoped.artifacts, 'artifact_id', ARTIFACT_HEADERS) : existingArtifacts;
+    const mergedMedia = scoped.media.length ? upsertById(existingMedia, scoped.media, 'media_id', MEDIA_HEADERS) : existingMedia;
 
     await fs.writeFile(clubFile, toCsv(CLUB_HEADERS, mergedClubs), 'utf8');
     await fs.writeFile(artifactFile, toCsv(ARTIFACT_HEADERS, mergedArtifacts), 'utf8');
@@ -507,10 +694,11 @@ async function handlePublish(req, res) {
       ok: true,
       message: '自动发布成功',
       backupDir: path.relative(ROOT, backupDir),
+      blocked: scoped.blocked,
       stats: {
-        clubs_published: clubs.length,
-        artifacts_published: artifacts.length,
-        media_published: media.length,
+        clubs_published: scoped.clubs.length,
+        artifacts_published: scoped.artifacts.length,
+        media_published: scoped.media.length,
         clubs_total: mergedClubs.length,
         artifacts_total: mergedArtifacts.length,
         media_total: mergedMedia.length
@@ -519,6 +707,68 @@ async function handlePublish(req, res) {
   } catch (error) {
     return json(res, 500, { ok: false, message: `发布失败：${error.message}` });
   }
+}
+
+async function handleAuthLogin(req, res) {
+  try {
+    await ensureRuntimeDirs();
+    const body = await parseJsonBody(req);
+    const result = await resolveLoginByName(body?.name);
+    if (!result.ok) return forbidden(res, result.message);
+    const sid = createSession({
+      role: result.role,
+      displayName: result.displayName,
+      clubIds: result.clubIds || []
+    });
+    return jsonWithCookie(
+      res,
+      200,
+      {
+        ok: true,
+        role: result.role,
+        displayName: result.displayName,
+        clubIds: result.role === 'teacher' ? result.clubIds : []
+      },
+      makeCookie(SESSION_COOKIE, sid, Math.floor(SESSION_TTL_MS / 1000))
+    );
+  } catch (error) {
+    return json(res, 500, { ok: false, message: `登录失败：${error.message}` });
+  }
+}
+
+function handleAuthMe(req, res) {
+  const session = getSession(req);
+  if (!session) return json(res, 200, { ok: true, authenticated: false });
+  return json(res, 200, {
+    ok: true,
+    authenticated: true,
+    role: session.role,
+    displayName: session.displayName,
+    clubIds: isTeacherSession(session) ? session.clubIds : []
+  });
+}
+
+function handleAuthLogout(req, res) {
+  const sid = parseCookies(req)[SESSION_COOKIE];
+  if (sid) sessions.delete(sid);
+  return jsonWithCookie(res, 200, { ok: true }, clearCookie(SESSION_COOKIE));
+}
+
+async function handleCollectorBase(req, res) {
+  const session = getSession(req);
+  if (!session) return unauthorized(res);
+  const base = await loadAllBaseTables();
+  const scoped = isAdminSession(session) ? base : filterBaseByScope(base, session.clubIds || []);
+  return json(res, 200, {
+    ok: true,
+    clubs: sanitizeRows(scoped.clubs, CLUB_HEADERS),
+    artifacts: sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS),
+    media: sanitizeRows(scoped.media, MEDIA_HEADERS),
+    sourceMode: 'local',
+    scope: isAdminSession(session)
+      ? { role: 'admin', clubIds: [] }
+      : { role: 'teacher', clubIds: session.clubIds || [] }
+  });
 }
 
 async function serveStatic(req, res, pathname) {
@@ -574,6 +824,22 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/health') {
     return json(res, 200, { ok: true, now: new Date().toISOString() });
+  }
+
+  if (pathname === '/api/auth/login' && req.method === 'POST') {
+    return handleAuthLogin(req, res);
+  }
+
+  if (pathname === '/api/auth/me' && req.method === 'GET') {
+    return handleAuthMe(req, res);
+  }
+
+  if (pathname === '/api/auth/logout' && req.method === 'POST') {
+    return handleAuthLogout(req, res);
+  }
+
+  if (pathname === '/api/collector/base' && req.method === 'GET') {
+    return handleCollectorBase(req, res);
   }
 
   if (pathname === '/api/upload' && req.method === 'POST') {

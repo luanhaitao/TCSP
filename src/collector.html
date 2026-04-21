@@ -10,6 +10,19 @@
     <header class="top">
       <h1>科技社团云展数据收集器</h1>
       <p>面向非技术教师：中文字段、自动推荐、一步一步填即可。</p>
+      <div id="authPanel" class="card">
+        <h3>身份验证</h3>
+        <p class="small">请输入你的姓名。仅社团执教教师或超级管理员可进入。</p>
+        <div id="loginBox" class="top-actions">
+          <input id="loginName" placeholder="请输入姓名" />
+          <button id="loginBtn" class="btn" type="button">进入收集器</button>
+        </div>
+        <div id="sessionBox" class="top-actions is-hidden">
+          <span id="authSummary" class="small"></span>
+          <button id="logoutBtn" class="btn btn-light" type="button">退出登录</button>
+        </div>
+        <p id="loginStatus" class="action-status">请先完成身份验证。</p>
+      </div>
       <div class="top-actions">
         <a class="btn" href="./index.html">返回云展首页</a>
         <button id="loadBtn" class="btn btn-light" type="button">读取当前基础数据</button>
@@ -18,7 +31,7 @@
       <p id="status" class="status">准备就绪</p>
     </header>
 
-    <main>
+    <main id="collectorMain" class="is-hidden">
       <section class="card tabs">
         <button class="tab is-active" data-tab="club">1. 新增社团信息</button>
         <button class="tab" data-tab="artifact">2. 新增学员成果</button>

@@ -6,6 +6,7 @@
 - 页面展示保持 `1+N+X` 结构
 - 教师通过在线表格维护数据（不改代码）
 - 提供教师友好的网页版数据收集器（中文字段、自动推荐 ID、必填校验）
+- 收集器支持身份验证与分权：教师仅维护本人社团，管理员全量维护
 - 支持即时发布（刷新后生效）
 - 提供基础校验、前端容错、每日备份与回滚
 
@@ -219,6 +220,10 @@ sudo journalctl -u tcsp-portal -f
 1. 在 `src/config.js` 保持：
 
 ```js
+auth: {
+  enabled: true,
+  adminNames: ['科技组管理员']
+},
 assetUpload: {
   enabled: true,
   provider: 'local',
@@ -228,6 +233,12 @@ assetUpload: {
   }
 }
 ```
+
+认证与权限说明：
+- 收集器页面先输入姓名登录（`/src/collector.html`）。
+- 超级管理员姓名由 `src/config.js -> auth.adminNames` 配置（免密）。
+- 普通教师姓名需与 `club_profile.teacher` 完全一致，且仅可维护其名下社团数据。
+- `/api/upload`、`/api/publish` 需要登录后才能调用。
 
 局域网部署注意：
 - `publish.apiUrl` 建议使用相对路径 `'/api/publish'`（不要写 `http://localhost:8090/api/publish`）。
