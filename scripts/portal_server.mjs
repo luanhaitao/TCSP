@@ -385,6 +385,19 @@ function handleTemplateDownload(req, res, pathname) {
     };
     return downloadCsvResponse(res, `club_template_${todayLabel()}.csv`, CLUB_TEMPLATE_CN_HEADERS, [row]);
   }
+  if (pathname === '/api/template/club_guide.csv') {
+    const rows = [
+      { 项目: '社团类别（展馆类别）推荐值', 说明: '建议使用以下统一类别，便于首页分馆展示与筛选。' },
+      { 项目: '可选类别1', 说明: '智能编程馆' },
+      { 项目: '可选类别2', 说明: '工程设计馆' },
+      { 项目: '可选类别3', 说明: '科学探究馆' },
+      { 项目: '可选类别4', 说明: '数字创意馆' },
+      { 项目: '可选类别5', 说明: '科学普及馆' },
+      { 项目: '可选类别6', 说明: '工程制造馆' },
+      { 项目: '填写建议', 说明: '尽量从上述类别中选择，不建议自由发挥写法。' }
+    ];
+    return downloadCsvResponse(res, `club_template_guide_${todayLabel()}.csv`, ['项目', '说明'], rows);
+  }
 
   if (pathname === '/api/template/artifact.csv') {
     const row = {
@@ -402,6 +415,17 @@ function handleTemplateDownload(req, res, pathname) {
       教师简评: '表达清晰，过程完整'
     };
     return downloadCsvResponse(res, `artifact_template_${todayLabel()}.csv`, ARTIFACT_TEMPLATE_CN_HEADERS, [row]);
+  }
+  if (pathname === '/api/template/artifact_guide.csv') {
+    const rows = [
+      { 项目: '学员姓名字段填写规则', 说明: '可填写多人姓名（用“、”分隔）或直接填写小组名称。' },
+      { 项目: '多人示例', 说明: '学员姓名 = 张三、李四、王五' },
+      { 项目: '小组示例', 说明: '学员姓名 = 未来创客队' },
+      { 项目: '所属社团字段填写规则', 说明: '优先填写“社团名称”；若存在同名社团，请填写社团ID（如 C001）。' },
+      { 项目: '推荐写法', 说明: '所属社团 = 智能编程社' },
+      { 项目: '重名写法', 说明: '所属社团 = C001' }
+    ];
+    return downloadCsvResponse(res, `artifact_template_guide_${todayLabel()}.csv`, ['项目', '说明'], rows);
   }
 
   return false;
@@ -661,6 +685,9 @@ async function handlePublish(req, res) {
     const clubs = Array.isArray(body.clubs) ? body.clubs : [];
     const artifacts = Array.isArray(body.artifacts) ? body.artifacts : [];
     const media = Array.isArray(body.media) ? body.media : [];
+    const deleteArtifactIds = Array.isArray(body.delete_artifact_ids) ? body.delete_artifact_ids.map((v) => String(v || '').trim()).filter(Boolean) : [];
+    const deleteMediaIds = Array.isArray(body.delete_media_ids) ? body.delete_media_ids.map((v) => String(v || '').trim()).filter(Boolean) : [];
+    const adminFullSync = isAdminSession(session) && body?.full_sync === true;
 
     if (!clubs.length && !artifacts.length && !media.length) {
       return json(res, 400, { ok: false, message: '草稿为空，暂无可发布数据。' });
@@ -682,9 +709,67 @@ async function handlePublish(req, res) {
 
     const backupDir = await backupBeforeWrite();
 
-    const mergedClubs = scoped.clubs.length ? upsertById(existingClubs, scoped.clubs, 'club_id', CLUB_HEADERS) : existingClubs;
-    const mergedArtifacts = scoped.artifacts.length ? upsertById(existingArtifacts, scoped.artifacts, 'artifact_id', ARTIFACT_HEADERS) : existingArtifacts;
-    const mergedMedia = scoped.media.length ? upsertById(existingMedia, scoped.media, 'media_id', MEDIA_HEADERS) : existingMedia;
+    const mergedClubs = adminFullSync
+      ? sanitizeRows(scoped.clubs, CLUB_HEADERS)
+      : (scoped.clubs.length ? upsertById(existingClubs, scoped.clubs, 'club_id', CLUB_HEADERS) : existingClubs);
+    let mergedArtifacts = adminFullSync
+      ? sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS)
+      : (scoped.artifacts.length ? upsertById(existingArtifacts, scoped.artifacts, 'artifact_id', ARTIFACT_HEADERS) : existingArtifacts);
+    let mergedMedia = adminFullSync
+      ? sanitizeRows(scoped.media, MEDIA_HEADERS)
+      : (scoped.media.length ? upsertById(existingMedia, scoped.media, 'media_id', MEDIA_HEADERS) : existingMedia);
+
+    let artifactsDeleted = 0;
+    let mediaDeleted = 0;
+    let blockedArtifactDelete = 0;
+    let blockedMediaDelete = 0;
+    if (!adminFullSync && (deleteArtifactIds.length || deleteMediaIds.length)) {
+      const teacherClubSet = new Set((session.clubIds || []).map((v) => String(v)));
+      const mergedArtifactMap = new Map(mergedArtifacts.map((r) => [String(r.artifact_id || '').trim(), r]));
+      const allowedDeleteArtifactIdSet = new Set();
+      for (const aid of deleteArtifactIds) {
+        const row = mergedArtifactMap.get(aid);
+        if (row && teacherClubSet.has(String(row.club_id || '').trim())) {
+          allowedDeleteArtifactIdSet.add(aid);
+        } else {
+          blockedArtifactDelete += 1;
+        }
+      }
+      if (allowedDeleteArtifactIdSet.size) {
+        const before = mergedArtifacts.length;
+        mergedArtifacts = mergedArtifacts.filter((r) => !allowedDeleteArtifactIdSet.has(String(r.artifact_id || '').trim()));
+        artifactsDeleted += before - mergedArtifacts.length;
+      }
+
+      const allowedDeleteMediaIdSet = new Set();
+      const mergedArtifactIdSetAfterDelete = new Set(mergedArtifacts.map((r) => String(r.artifact_id || '').trim()));
+      for (const mid of deleteMediaIds) {
+        const row = mergedMedia.find((m) => String(m.media_id || '').trim() === mid);
+        if (!row) continue;
+        const ownerType = String(row.owner_type || '').trim();
+        const ownerId = String(row.owner_id || '').trim();
+        const allowed = (ownerType === 'club' && teacherClubSet.has(ownerId))
+          || (ownerType === 'artifact' && (mergedArtifactIdSetAfterDelete.has(ownerId) || allowedDeleteArtifactIdSet.has(ownerId)));
+        if (allowed) allowedDeleteMediaIdSet.add(mid);
+        else blockedMediaDelete += 1;
+      }
+      if (allowedDeleteMediaIdSet.size) {
+        const before = mergedMedia.length;
+        mergedMedia = mergedMedia.filter((r) => !allowedDeleteMediaIdSet.has(String(r.media_id || '').trim()));
+        mediaDeleted += before - mergedMedia.length;
+      }
+
+      if (allowedDeleteArtifactIdSet.size) {
+        const beforeCascade = mergedMedia.length;
+        mergedMedia = mergedMedia.filter((r) => {
+          const ownerType = String(r.owner_type || '').trim();
+          const ownerId = String(r.owner_id || '').trim();
+          if (ownerType === 'artifact' && allowedDeleteArtifactIdSet.has(ownerId)) return false;
+          return true;
+        });
+        mediaDeleted += beforeCascade - mergedMedia.length;
+      }
+    }
 
     await fs.writeFile(clubFile, toCsv(CLUB_HEADERS, mergedClubs), 'utf8');
     await fs.writeFile(artifactFile, toCsv(ARTIFACT_HEADERS, mergedArtifacts), 'utf8');
@@ -695,10 +780,15 @@ async function handlePublish(req, res) {
       message: '自动发布成功',
       backupDir: path.relative(ROOT, backupDir),
       blocked: scoped.blocked,
+      mode: adminFullSync ? 'admin_full_sync' : 'upsert',
       stats: {
         clubs_published: scoped.clubs.length,
         artifacts_published: scoped.artifacts.length,
         media_published: scoped.media.length,
+        artifacts_deleted: artifactsDeleted,
+        media_deleted: mediaDeleted,
+        delete_blocked_artifacts: blockedArtifactDelete,
+        delete_blocked_media: blockedMediaDelete,
         clubs_total: mergedClubs.length,
         artifacts_total: mergedArtifacts.length,
         media_total: mergedMedia.length

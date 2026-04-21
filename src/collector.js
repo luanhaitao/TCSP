@@ -169,6 +169,7 @@ function applyAuthUi() {
     loginBox.classList.remove('is-hidden');
     sessionBox.classList.add('is-hidden');
     authSummary.textContent = '';
+    setClubImportEnabled(false);
     return;
   }
 
@@ -177,6 +178,7 @@ function applyAuthUi() {
   sessionBox.classList.remove('is-hidden');
   if (state.auth.role === 'admin') {
     authSummary.textContent = `当前身份：超级管理员（${state.auth.displayName}）`;
+    setClubImportEnabled(true);
   } else {
     const clubNameMap = new Map((state.base.clubs || []).map((c) => [String(c.club_id || ''), String(c.club_name || '').trim()]));
     const labels = (state.auth.clubIds || [])
@@ -187,6 +189,7 @@ function applyAuthUi() {
       .filter(Boolean);
     const clubText = labels.length ? `（${labels.join('、')}）` : '';
     authSummary.textContent = `当前身份：教师（${state.auth.displayName}），可管理社团 ${state.auth.clubIds.length} 个${clubText}`;
+    setClubImportEnabled(false);
   }
 }
 
@@ -195,6 +198,18 @@ function setLoginStatus(text, isWarn = false) {
   if (!el) return;
   el.textContent = text;
   el.className = isWarn ? 'action-status warn' : 'action-status';
+}
+
+function setClubImportEnabled(enabled) {
+  const downloadBtn = byId('downloadClubTemplate');
+  const fileInput = byId('clubImportFile');
+  const importBtn = byId('importClubBtn');
+  if (downloadBtn) downloadBtn.disabled = !enabled;
+  if (fileInput) fileInput.disabled = !enabled;
+  if (importBtn) importBtn.disabled = !enabled;
+  if (!enabled) {
+    setActionStatus('clubImportStatus', '该功能仅超级管理员可用：社团信息请由管理员统一导入。');
+  }
 }
 
 async function checkAuth() {
@@ -685,7 +700,11 @@ function renderTable(containerId, headers, rows, type) {
   const body = rows
     .map((row, idx) => {
       const tds = headers.map((h) => `<td>${formatTableCell(type, h, row[h])}</td>`).join('');
-      return `<tr><td><button data-edit="${type}" data-idx="${idx}">编辑</button> <button data-del="${type}" data-idx="${idx}">删除</button></td>${tds}</tr>`;
+      const canDelete = !(state.auth.role === 'teacher' && type === 'clubs');
+      const delBtn = canDelete
+        ? `<button data-del="${type}" data-idx="${idx}">删除</button>`
+        : '<button disabled title="教师不能删除社团信息">删除</button>';
+      return `<tr><td><button data-edit="${type}" data-idx="${idx}">编辑</button> ${delBtn}</td>${tds}</tr>`;
     })
     .join('');
 
@@ -804,13 +823,6 @@ function upsertClubDraft(row) {
 
 function downloadClubTemplate() {
   try {
-    if (location.protocol.startsWith('http')) {
-      triggerServerDownload('/api/template/club.csv');
-      setActionStatus('clubImportStatus', '模板下载已开始（CSV）。');
-      setStatus('模板下载已开始。');
-      return;
-    }
-
     const XLSX = tryGetXlsx();
     const sample = {
       社团ID: '',
@@ -833,6 +845,8 @@ function downloadClubTemplate() {
       { 项目: '可选类别2', 说明: '工程设计馆' },
       { 项目: '可选类别3', 说明: '科学探究馆' },
       { 项目: '可选类别4', 说明: '数字创意馆' },
+      { 项目: '可选类别5', 说明: '科学普及馆' },
+      { 项目: '可选类别6', 说明: '工程制造馆' },
       { 项目: '填写建议', 说明: '尽量从上述类别中选择，不建议自由发挥写法。' }
     ];
     if (XLSX) {
@@ -842,8 +856,8 @@ function downloadClubTemplate() {
       const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
       XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
       downloadXlsxWorkbook(wb, `club_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      setActionStatus('clubImportStatus', '社团模板下载成功，可直接填写后导入。');
-      setStatus('社团模板下载成功，可直接填写后导入。');
+      setActionStatus('clubImportStatus', '社团模板下载成功（1个Excel，含“模板+填写说明”两个工作表）。');
+      setStatus('社团模板下载成功（1个Excel，含两个工作表）。');
       return;
     }
 
@@ -949,13 +963,6 @@ function upsertArtifactDraft(row) {
 
 function downloadArtifactTemplate() {
   try {
-    if (location.protocol.startsWith('http')) {
-      triggerServerDownload('/api/template/artifact.csv');
-      setActionStatus('artifactImportStatus', '模板下载已开始（CSV）。');
-      setStatus('模板下载已开始。');
-      return;
-    }
-
     const XLSX = tryGetXlsx();
     const sample = {
       成果ID: '',
@@ -986,8 +993,8 @@ function downloadArtifactTemplate() {
       const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
       XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
       downloadXlsxWorkbook(wb, `artifact_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      setActionStatus('artifactImportStatus', '成果模板下载成功，可直接填写后导入。');
-      setStatus('模板下载成功，可直接填写后导入。');
+      setActionStatus('artifactImportStatus', '成果模板下载成功（1个Excel，含“模板+填写说明”两个工作表）。');
+      setStatus('成果模板下载成功（1个Excel，含两个工作表）。');
       return;
     }
 
@@ -1281,6 +1288,21 @@ function bindClearActions() {
   });
 }
 
+function computeTeacherDeletePayload() {
+  const baseArtifactIds = new Set((state.base.artifacts || []).map((r) => String(r.artifact_id || '').trim()).filter(Boolean));
+  const draftArtifactIds = new Set((state.drafts.artifacts || []).map((r) => String(r.artifact_id || '').trim()).filter(Boolean));
+  const deleteArtifactIds = [...baseArtifactIds].filter((id) => !draftArtifactIds.has(id));
+
+  const baseMediaIds = new Set((state.base.media || []).map((r) => String(r.media_id || '').trim()).filter(Boolean));
+  const draftMediaIds = new Set((state.drafts.media || []).map((r) => String(r.media_id || '').trim()).filter(Boolean));
+  const deleteMediaIds = [...baseMediaIds].filter((id) => !draftMediaIds.has(id));
+
+  return {
+    delete_artifact_ids: deleteArtifactIds,
+    delete_media_ids: deleteMediaIds
+  };
+}
+
 function bindExports() {
   byId('exportAllCsv').addEventListener('click', () => {
     const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -1321,7 +1343,9 @@ async function publishDrafts() {
         clubs,
         artifacts,
         media,
-        published_at: nowText()
+        published_at: nowText(),
+        full_sync: state.auth.role === 'admin',
+        ...(state.auth.role === 'teacher' ? computeTeacherDeletePayload() : {})
       })
     });
 
@@ -1341,6 +1365,10 @@ async function publishDrafts() {
     setActionStatus(
       'publishStatus',
       `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。` +
+      ((result.stats?.artifacts_deleted ?? 0) > 0 || (result.stats?.media_deleted ?? 0) > 0
+        ? `（已删除：成果 ${result.stats?.artifacts_deleted ?? 0} 条，素材 ${result.stats?.media_deleted ?? 0} 条）`
+        : '') +
+      (result.mode === 'admin_full_sync' ? '（管理员全量同步模式）' : '') +
       ((result.blocked && (result.blocked.clubs + result.blocked.artifacts + result.blocked.media) > 0)
         ? `（已拦截越权草稿 ${result.blocked.clubs + result.blocked.artifacts + result.blocked.media} 条）`
         : '')
