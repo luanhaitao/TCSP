@@ -363,6 +363,22 @@ async function extractGifFirstFrame(gifPath, outputPath) {
   return false;
 }
 
+async function extractVideoFirstFrame(videoPath, outputPath) {
+  const strategies = [
+    ['ffmpeg', ['-y', '-i', videoPath, '-frames:v', '1', outputPath]]
+  ];
+  for (const [cmd, args] of strategies) {
+    try {
+      await runCommand(cmd, args);
+      const stat = await fs.stat(outputPath);
+      if (stat.size > 0) return true;
+    } catch {
+      // try next strategy
+    }
+  }
+  return false;
+}
+
 async function handleUpload(req, res) {
   try {
     await ensureRuntimeDirs();
@@ -411,6 +427,19 @@ async function handleUpload(req, res) {
           media_type: 'image',
           derived_from: targetPath,
           is_gif_first_frame: true
+        });
+      }
+    }
+    if (mediaType === 'video') {
+      const thumbName = `${path.basename(targetName, path.extname(targetName))}_firstframe.png`;
+      const thumbPath = path.join(uploadDir, thumbName);
+      const ok = await extractVideoFirstFrame(targetPath, thumbPath);
+      if (ok) {
+        thumbnailRelUrl = `/uploads/${dateDir}/${thumbName}`;
+        thumbnailBackupPath = await backupUploadedFile(thumbPath, dateDir, thumbName, {
+          media_type: 'image',
+          derived_from: targetPath,
+          is_video_first_frame: true
         });
       }
     }

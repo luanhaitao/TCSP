@@ -1235,12 +1235,17 @@ async function uploadMediaFile() {
       const result = await uploadLocalFile(file, { publicId: `media_${Date.now()}` });
       byId('media_url').value = result.url;
       byId('media_type').value = result.mediaType;
-      if (result.mediaType === 'image' && result.thumbnailUrl && !byId('thumbnail_url').value.trim()) {
+      if ((result.mediaType === 'image' || result.mediaType === 'video') && result.thumbnailUrl && !byId('thumbnail_url').value.trim()) {
         byId('thumbnail_url').value = result.thumbnailUrl;
       }
       if (result.mediaType === 'video' && !byId('thumbnail_url').value.trim()) {
         setActionStatus('mediaUploadStatus', '视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
         setStatus('视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
+        return;
+      }
+      if (result.mediaType === 'video' && result.thumbnailUrl) {
+        setActionStatus('mediaUploadStatus', '视频上传成功，已自动生成首帧缩略图并填入。');
+        setStatus('视频上传成功，已自动生成首帧缩略图并填入。');
         return;
       }
       if (result.mediaType === 'image' && result.thumbnailUrl) {
@@ -1460,7 +1465,7 @@ async function importMediaFromFolder() {
           owner_id: item.ownerId,
           media_type: 'video',
           url: uploaded.url,
-          thumbnail_url: imageUrlMap.get(`${item.ownerId}::${item.baseName}`) || '',
+          thumbnail_url: imageUrlMap.get(`${item.ownerId}::${item.baseName}`) || uploaded.thumbnailUrl || '',
           copyright_status: '',
           notes: `目录导入：${item.file.name}`
         });

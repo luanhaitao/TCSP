@@ -200,6 +200,8 @@ function artifactCardMedia(artifact) {
   if (!first) return { kind: 'empty', src: '' };
   if (first.media_type === 'video') {
     if (first.thumbnail_url && isAssetUrl(first.thumbnail_url)) return { kind: 'image', src: first.thumbnail_url };
+    const nonGifImage = medias.find((m) => isNonGifImageMedia(m));
+    if (nonGifImage) return { kind: 'image', src: nonGifImage.url };
     return { kind: 'video', src: '' };
   }
   if (first.media_type === 'pdf') return { kind: 'pdf', src: '' };
@@ -226,6 +228,11 @@ function renderArtifactCover(artifact) {
     return '<div class="artifact-cover artifact-cover-pdf"><span>PDF成果</span></div>';
   }
   if (media.kind === 'video') {
+    const video = getMediaForArtifact(artifact.artifact_id).find((m) => m.media_type === 'video' && isAssetUrl(m.url));
+    if (video) {
+      const poster = isAssetUrl(video.thumbnail_url) ? ` poster="${escAttr(video.thumbnail_url)}"` : '';
+      return `<video class="media-preview" preload="metadata" muted playsinline${poster}><source src="${escAttr(video.url)}" /></video>`;
+    }
     return '<div class="artifact-cover artifact-cover-video"><span>视频成果</span></div>';
   }
   if (media.kind === 'gif') {
@@ -299,6 +306,7 @@ function applyFilters() {
 }
 
 function openDetail(artifactId) {
+  stopDialogMedia();
   const item = state.artifacts.find((artifact) => artifact.artifact_id === artifactId);
   if (!item) return;
 
@@ -311,7 +319,8 @@ function openDetail(artifactId) {
         if (!isAssetUrl(media.url)) {
           return '<p class="warning">视频链接无效，已隐藏播放按钮。</p>';
         }
-        return `<p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开视频</a></p>`;
+        const poster = isAssetUrl(media.thumbnail_url) ? ` poster="${escAttr(media.thumbnail_url)}"` : '';
+        return `<video class="media-preview" controls preload="metadata" playsinline${poster}><source src="${escAttr(media.url)}" /></video>`;
       }
       if (media.media_type === 'pdf') {
         if (!isAssetUrl(media.url)) {
@@ -330,18 +339,12 @@ function openDetail(artifactId) {
         return '<p class="warning">图片链接无效，已使用默认占位图。</p>';
       }
       if (isGifUrl(media.url)) {
-        if (media.thumbnail_url && isAssetUrl(media.thumbnail_url)) {
-          return `
-            ${renderImageWithFallback({
-    className: 'media-preview',
-    src: media.thumbnail_url,
-    alt: `${item.artifact_name} GIF首帧`,
-    fallbackUrls: [CONFIG.defaults.imagePlaceholder]
-  })}
-            <p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开GIF原图</a></p>
-          `;
-        }
-        return `<p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开GIF原图</a></p>`;
+        return renderImageWithFallback({
+          className: 'media-preview',
+          src: media.url,
+          alt: `${item.artifact_name} GIF`,
+          fallbackUrls: [media.thumbnail_url, CONFIG.defaults.imagePlaceholder]
+        });
       }
       return renderImageWithFallback({
         className: 'media-preview',
@@ -366,6 +369,17 @@ function openDetail(artifactId) {
   bindImageFallbacks(dialogBodyEl);
 
   dialogEl.showModal();
+}
+
+function stopDialogMedia() {
+  dialogBodyEl.querySelectorAll('video').forEach((video) => {
+    try {
+      video.pause();
+      video.currentTime = 0;
+    } catch {
+      // ignore
+    }
+  });
 }
 
 async function boot() {
@@ -405,6 +419,8 @@ filterClubEl.addEventListener('change', applyFilters);
 filterTypeEl.addEventListener('change', applyFilters);
 filterKeywordEl.addEventListener('input', applyFilters);
 clubSearchEl.addEventListener('input', applyFilters);
+dialogEl.addEventListener('close', stopDialogMedia);
+dialogEl.addEventListener('cancel', stopDialogMedia);
 
 if (CONFIG.autoRefreshMs > 0) {
   setInterval(boot, CONFIG.autoRefreshMs);
