@@ -48,6 +48,12 @@ git clone https://github.com/luanhaitao/TCSP.git
 cd TCSP
 node -v
 npm -v
+mkdir -p /Users/juehai/workspace/TCSP_DATA/{data,uploads,backup}
+if [ -d data ] && [ -z "$(ls -A /Users/juehai/workspace/TCSP_DATA/data 2>/dev/null)" ]; then cp -R data/* /Users/juehai/workspace/TCSP_DATA/data/; fi
+if [ -d uploads ] && [ -z "$(ls -A /Users/juehai/workspace/TCSP_DATA/uploads 2>/dev/null)" ]; then cp -R uploads/* /Users/juehai/workspace/TCSP_DATA/uploads/; fi
+TCSP_DATA_DIR=/Users/juehai/workspace/TCSP_DATA/data \
+TCSP_UPLOADS_DIR=/Users/juehai/workspace/TCSP_DATA/uploads \
+TCSP_BACKUP_DIR=/Users/juehai/workspace/TCSP_DATA/backup \
 npm run serve:portal
 ```
 
@@ -62,6 +68,9 @@ npm run serve:portal
 
 ```bash
 cd TCSP
+TCSP_DATA_DIR=/Users/juehai/workspace/TCSP_DATA/data \
+TCSP_UPLOADS_DIR=/Users/juehai/workspace/TCSP_DATA/uploads \
+TCSP_BACKUP_DIR=/Users/juehai/workspace/TCSP_DATA/backup \
 nohup npm run serve:portal > portal.log 2>&1 &
 ```
 
@@ -94,6 +103,9 @@ PORT=9000 npm run serve:portal
 cd TCSP
 git pull
 pkill -f "portal_server.mjs"
+TCSP_DATA_DIR=/Users/juehai/workspace/TCSP_DATA/data \
+TCSP_UPLOADS_DIR=/Users/juehai/workspace/TCSP_DATA/uploads \
+TCSP_BACKUP_DIR=/Users/juehai/workspace/TCSP_DATA/backup \
 nohup npm run serve:portal > portal.log 2>&1 &
 ```
 
@@ -138,8 +150,10 @@ macOS（launchd）：
 ```bash
 cd TCSP
 PROJECT_DIR="$(pwd)"
+PERSIST_DIR="/Users/juehai/workspace/TCSP_DATA"
 mkdir -p ~/Library/LaunchAgents
-sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" deploy/macos/com.tcsp.portal.plist.template > ~/Library/LaunchAgents/com.tcsp.portal.plist
+mkdir -p "$PERSIST_DIR"/{data,uploads,backup}
+sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" -e "s|__PERSIST_DIR__|$PERSIST_DIR|g" deploy/macos/com.tcsp.portal.plist.template > ~/Library/LaunchAgents/com.tcsp.portal.plist
 launchctl unload ~/Library/LaunchAgents/com.tcsp.portal.plist 2>/dev/null || true
 launchctl load ~/Library/LaunchAgents/com.tcsp.portal.plist
 launchctl start com.tcsp.portal
@@ -152,7 +166,9 @@ Linux（systemd）：
 cd TCSP
 PROJECT_DIR="$(pwd)"
 RUN_USER="$(whoami)"
-sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" -e "s|__RUN_USER__|$RUN_USER|g" deploy/linux/tcsp-portal.service.template | sudo tee /etc/systemd/system/tcsp-portal.service > /dev/null
+PERSIST_DIR="/Users/juehai/workspace/TCSP_DATA"
+mkdir -p "$PERSIST_DIR"/{data,uploads,backup}
+sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" -e "s|__RUN_USER__|$RUN_USER|g" -e "s|__PERSIST_DIR__|$PERSIST_DIR|g" deploy/linux/tcsp-portal.service.template | sudo tee /etc/systemd/system/tcsp-portal.service > /dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable --now tcsp-portal
 sudo systemctl status tcsp-portal --no-pager
@@ -177,7 +193,7 @@ sudo journalctl -u tcsp-portal -f
 功能说明：
 - 全字段中文标签与提示，必填项红星标注
 - 自动推荐 ID：`Cxxx`（社团）/ `Axxx`（成果）/ `Mxxx`（素材）
-- 自动生成学员化名与更新时间
+- 更新时间可一键填入当前时间
 - 草稿本地保存（浏览器 localStorage）
 - 一键导出三张 CSV（社团/成果/素材）
 - 支持本地素材直传（统一云端存储，自动回填 URL）
@@ -197,7 +213,7 @@ sudo journalctl -u tcsp-portal -f
 
 ## 统一素材上传方案（局域网本地存储，推荐）
 
-当前默认方案：上传到服务器 Mac 本机目录 `uploads/`，无第三方网盘依赖。
+当前默认方案：上传到服务器本机持久化目录（推荐 `.../TCSP_DATA/uploads/`），无第三方网盘依赖。
 
 管理员配置（默认已就绪）：
 1. 在 `src/config.js` 保持：
@@ -251,6 +267,13 @@ node scripts/backup_snapshot.mjs
 # 从快照回滚到 data/
 node scripts/restore_snapshot.mjs backup/snapshots/<timestamp>
 ```
+
+补充说明（教师上传素材备份）：
+- 收集器每次调用 `/api/upload` 上传成功后，系统会自动把文件再备份一份到：
+  - `TCSP_BACKUP_DIR/uploads/<YYYY-MM>/`
+- 同时写入上传备份日志：
+  - `TCSP_BACKUP_DIR/uploads/upload_log.jsonl`
+- 如需人工恢复，可从该目录拷回 `TCSP_UPLOADS_DIR/<YYYY-MM>/` 后刷新页面。
 
 ## 文档
 - 教师上传与维护详细手册：`docs/教师上传与维护数据操作手册.md`

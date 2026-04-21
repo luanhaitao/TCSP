@@ -2,12 +2,16 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import url from 'node:url';
+import { spawn } from 'node:child_process';
 import { parseCsv } from './shared_csv.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 8090);
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB || 300) * 1024 * 1024;
+const DATA_DIR = path.resolve(process.env.TCSP_DATA_DIR || path.join(ROOT, 'data'));
+const UPLOADS_DIR = path.resolve(process.env.TCSP_UPLOADS_DIR || path.join(ROOT, 'uploads'));
+const BACKUP_DIR = path.resolve(process.env.TCSP_BACKUP_DIR || path.join(ROOT, 'backup'));
 
 const CLUB_HEADERS = [
   'club_id', 'club_name', 'teacher', 'grade_range', 'student_count', 'club_category', 'intro',
@@ -119,12 +123,12 @@ function upsertById(existingRows, incomingRows, idKey, headers) {
 
 async function backupBeforeWrite() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = path.join(ROOT, 'backup', 'auto_publish', ts);
+  const dir = path.join(BACKUP_DIR, 'auto_publish', ts);
   await fs.mkdir(dir, { recursive: true });
 
   const files = ['club_profile.csv', 'student_artifact.csv', 'media_asset.csv'];
   for (const file of files) {
-    const src = path.join(ROOT, 'data', file);
+    const src = path.join(DATA_DIR, file);
     const dst = path.join(dir, file);
     try {
       await fs.copyFile(src, dst);
@@ -135,6 +139,32 @@ async function backupBeforeWrite() {
 
   await fs.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ created_at: new Date().toISOString() }, null, 2), 'utf8');
   return dir;
+}
+
+async function ensureRuntimeDirs() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(UPLOADS_DIR, { recursive: true });
+  await fs.mkdir(BACKUP_DIR, { recursive: true });
+}
+
+async function appendJsonLine(filePath, payload) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.appendFile(filePath, `${JSON.stringify(payload)}\n`, 'utf8');
+}
+
+async function backupUploadedFile(targetPath, dateDir, targetName, meta) {
+  const backupUploadDir = path.join(BACKUP_DIR, 'uploads', dateDir);
+  await fs.mkdir(backupUploadDir, { recursive: true });
+  const backupPath = path.join(backupUploadDir, targetName);
+  await fs.copyFile(targetPath, backupPath);
+  const logPath = path.join(BACKUP_DIR, 'uploads', 'upload_log.jsonl');
+  await appendJsonLine(logPath, {
+    backed_up_at: new Date().toISOString(),
+    source_path: targetPath,
+    backup_path: backupPath,
+    ...meta
+  });
+  return backupPath;
 }
 
 function json(res, statusCode, data) {
@@ -301,8 +331,41 @@ function detectMediaType(filename, mime) {
   return '';
 }
 
+async function runCommand(cmd, args) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} exited with code ${code}`));
+    });
+  });
+}
+
+async function extractGifFirstFrame(gifPath, outputPath) {
+  const strategies = [];
+  if (process.platform === 'darwin') {
+    strategies.push(['sips', ['-s', 'format', 'png', gifPath, '--out', outputPath]]);
+  }
+  strategies.push(['ffmpeg', ['-y', '-i', gifPath, '-frames:v', '1', outputPath]]);
+  strategies.push(['magick', ['convert', `${gifPath}[0]`, outputPath]]);
+  strategies.push(['convert', [`${gifPath}[0]`, outputPath]]);
+
+  for (const [cmd, args] of strategies) {
+    try {
+      await runCommand(cmd, args);
+      const stat = await fs.stat(outputPath);
+      if (stat.size > 0) return true;
+    } catch {
+      // try next strategy
+    }
+  }
+  return false;
+}
+
 async function handleUpload(req, res) {
   try {
+    await ensureRuntimeDirs();
     const contentType = req.headers['content-type'] || '';
     const match = String(contentType).match(/multipart\/form-data;\s*boundary=(.+)$/i);
     if (!match) {
@@ -325,7 +388,7 @@ async function handleUpload(req, res) {
 
     const now = new Date();
     const dateDir = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const uploadDir = path.join(ROOT, 'uploads', dateDir);
+    const uploadDir = path.join(UPLOADS_DIR, dateDir);
     await fs.mkdir(uploadDir, { recursive: true });
 
     const safeName = sanitizeFilename(filePart.filename);
@@ -335,6 +398,28 @@ async function handleUpload(req, res) {
     const targetPath = path.join(uploadDir, targetName);
 
     await fs.writeFile(targetPath, filePart.content);
+
+    let thumbnailRelUrl = '';
+    let thumbnailBackupPath = '';
+    if (mediaType === 'image' && path.extname(targetName).toLowerCase() === '.gif') {
+      const thumbName = `${path.basename(targetName, '.gif')}_firstframe.png`;
+      const thumbPath = path.join(uploadDir, thumbName);
+      const ok = await extractGifFirstFrame(targetPath, thumbPath);
+      if (ok) {
+        thumbnailRelUrl = `/uploads/${dateDir}/${thumbName}`;
+        thumbnailBackupPath = await backupUploadedFile(thumbPath, dateDir, thumbName, {
+          media_type: 'image',
+          derived_from: targetPath,
+          is_gif_first_frame: true
+        });
+      }
+    }
+
+    const backupPath = await backupUploadedFile(targetPath, dateDir, targetName, {
+      media_type: mediaType,
+      original_filename: safeName,
+      bytes: filePart.content.length
+    });
 
     const relUrl = `/uploads/${dateDir}/${targetName}`;
     const host = req.headers.host || `localhost:${PORT}`;
@@ -348,7 +433,10 @@ async function handleUpload(req, res) {
       absoluteUrl,
       mediaType,
       originalFilename: safeName,
-      bytes: filePart.content.length
+      bytes: filePart.content.length,
+      backupPath: path.relative(ROOT, backupPath),
+      thumbnailUrl: thumbnailRelUrl,
+      thumbnailBackupPath: thumbnailBackupPath ? path.relative(ROOT, thumbnailBackupPath) : ''
     });
   } catch (error) {
     return json(res, 500, { ok: false, message: `上传失败：${error.message}` });
@@ -357,6 +445,7 @@ async function handleUpload(req, res) {
 
 async function handlePublish(req, res) {
   try {
+    await ensureRuntimeDirs();
     const body = await parseJsonBody(req);
 
     const clubs = Array.isArray(body.clubs) ? body.clubs : [];
@@ -369,9 +458,9 @@ async function handlePublish(req, res) {
 
     const backupDir = await backupBeforeWrite();
 
-    const clubFile = path.join(ROOT, 'data', 'club_profile.csv');
-    const artifactFile = path.join(ROOT, 'data', 'student_artifact.csv');
-    const mediaFile = path.join(ROOT, 'data', 'media_asset.csv');
+    const clubFile = path.join(DATA_DIR, 'club_profile.csv');
+    const artifactFile = path.join(DATA_DIR, 'student_artifact.csv');
+    const mediaFile = path.join(DATA_DIR, 'media_asset.csv');
 
     const existingClubs = await readCsvFile(clubFile);
     const existingArtifacts = await readCsvFile(artifactFile);
@@ -409,9 +498,18 @@ async function serveStatic(req, res, pathname) {
   if (rel === '/src' || rel === '/src/') rel = '/src/index.html';
 
   const safePath = path.normalize(rel).replace(/^\.\.(\/|\\|$)+/, '');
-  const full = path.join(ROOT, safePath);
+  let baseDir = ROOT;
+  let suffix = safePath;
+  if (safePath.startsWith('/data/')) {
+    baseDir = DATA_DIR;
+    suffix = safePath.slice('/data/'.length);
+  } else if (safePath.startsWith('/uploads/')) {
+    baseDir = UPLOADS_DIR;
+    suffix = safePath.slice('/uploads/'.length);
+  }
+  const full = path.join(baseDir, suffix);
 
-  if (!full.startsWith(ROOT)) {
+  if (!full.startsWith(baseDir)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
@@ -464,10 +562,20 @@ const server = http.createServer(async (req, res) => {
   return serveStatic(req, res, pathname);
 });
 
-server.listen(PORT, () => {
-  console.log(`Portal server running at http://localhost:${PORT}`);
-  console.log(`- 首页: http://localhost:${PORT}/src/index.html`);
-  console.log(`- 收集器: http://localhost:${PORT}/src/collector.html`);
-  console.log(`- 上传API: http://localhost:${PORT}/api/upload`);
-  console.log(`- 发布API: http://localhost:${PORT}/api/publish`);
-});
+ensureRuntimeDirs()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`Portal server running at http://localhost:${PORT}`);
+      console.log(`- 首页: http://localhost:${PORT}/src/index.html`);
+      console.log(`- 收集器: http://localhost:${PORT}/src/collector.html`);
+      console.log(`- 上传API: http://localhost:${PORT}/api/upload`);
+      console.log(`- 发布API: http://localhost:${PORT}/api/publish`);
+      console.log(`- 数据目录: ${DATA_DIR}`);
+      console.log(`- 上传目录: ${UPLOADS_DIR}`);
+      console.log(`- 备份目录: ${BACKUP_DIR}`);
+    });
+  })
+  .catch((error) => {
+    console.error(`启动失败：${error.message}`);
+    process.exit(1);
+  });

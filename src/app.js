@@ -24,6 +24,19 @@ const state = {
   filteredArtifacts: []
 };
 
+function isGifUrl(rawUrl) {
+  try {
+    const u = new URL(String(rawUrl || ''), window.location.origin);
+    return u.pathname.toLowerCase().endsWith('.gif');
+  } catch {
+    return String(rawUrl || '').toLowerCase().split('?')[0].endsWith('.gif');
+  }
+}
+
+function isNonGifImageMedia(media) {
+  return media && media.media_type === 'image' && isAssetUrl(media.url) && !isGifUrl(media.url);
+}
+
 function escAttr(value) {
   return String(value ?? '').replace(/"/g, '&quot;');
 }
@@ -112,7 +125,7 @@ function getMediaForClub(clubId) {
 function renderHeroBackdrop() {
   if (!heroBgEl) return;
   const imageUrls = state.media
-    .filter((m) => m.media_type === 'image' && isAssetUrl(m.url))
+    .filter((m) => isNonGifImageMedia(m))
     .map((m) => m.url);
 
   if (!imageUrls.length) {
@@ -156,13 +169,14 @@ function renderClubs() {
 
   clubListEl.innerHTML = state.filteredClubs
     .map((club) => {
-      const mediaCover = getMediaForClub(club.club_id).find((m) => m.media_type === 'image');
+      const mediaCover = getMediaForClub(club.club_id).find((m) => isNonGifImageMedia(m));
+      const clubCoverUrl = isAssetUrl(club.cover_url) && !isGifUrl(club.cover_url) ? club.cover_url : '';
       const artifacts = state.artifacts.filter((item) => item.club_id === club.club_id).length;
       return `
         <article class="club-card">
           ${renderImageWithFallback({
     className: 'media-preview',
-    src: club.cover_url,
+    src: clubCoverUrl,
     alt: `${club.club_name} 封面`,
     fallbackUrls: [mediaCover?.url, CONFIG.defaults.imagePlaceholder]
   })}
@@ -181,13 +195,20 @@ function renderClubs() {
 }
 
 function artifactCardMedia(artifact) {
-  const first = getMediaForArtifact(artifact.artifact_id)[0];
+  const medias = getMediaForArtifact(artifact.artifact_id);
+  const first = medias[0];
   if (!first) return { kind: 'empty', src: '' };
   if (first.media_type === 'video') {
     if (first.thumbnail_url && isAssetUrl(first.thumbnail_url)) return { kind: 'image', src: first.thumbnail_url };
     return { kind: 'video', src: '' };
   }
   if (first.media_type === 'pdf') return { kind: 'pdf', src: '' };
+  if (first.media_type === 'image' && isGifUrl(first.url)) {
+    if (first.thumbnail_url && isAssetUrl(first.thumbnail_url)) return { kind: 'image', src: first.thumbnail_url };
+    const nonGifImage = medias.find((m) => isNonGifImageMedia(m));
+    if (nonGifImage) return { kind: 'image', src: nonGifImage.url };
+    return { kind: 'gif', src: first.url };
+  }
   if (isAssetUrl(first.url)) return { kind: 'image', src: first.url };
   return { kind: 'empty', src: '' };
 }
@@ -206,6 +227,9 @@ function renderArtifactCover(artifact) {
   }
   if (media.kind === 'video') {
     return '<div class="artifact-cover artifact-cover-video"><span>视频成果</span></div>';
+  }
+  if (media.kind === 'gif') {
+    return '<div class="artifact-cover artifact-cover-video"><span>GIF成果</span></div>';
   }
   return '<div class="artifact-cover artifact-cover-empty"><span>暂无封面</span></div>';
 }
@@ -304,6 +328,20 @@ function openDetail(artifactId) {
       }
       if (!isAssetUrl(media.url)) {
         return '<p class="warning">图片链接无效，已使用默认占位图。</p>';
+      }
+      if (isGifUrl(media.url)) {
+        if (media.thumbnail_url && isAssetUrl(media.thumbnail_url)) {
+          return `
+            ${renderImageWithFallback({
+    className: 'media-preview',
+    src: media.thumbnail_url,
+    alt: `${item.artifact_name} GIF首帧`,
+    fallbackUrls: [CONFIG.defaults.imagePlaceholder]
+  })}
+            <p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开GIF原图</a></p>
+          `;
+        }
+        return `<p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开GIF原图</a></p>`;
       }
       return renderImageWithFallback({
         className: 'media-preview',

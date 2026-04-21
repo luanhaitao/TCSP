@@ -20,6 +20,12 @@
   <dict>
     <key>PORT</key>
     <string>8090</string>
+    <key>TCSP_DATA_DIR</key>
+    <string>__PERSIST_DIR__/data</string>
+    <key>TCSP_UPLOADS_DIR</key>
+    <string>__PERSIST_DIR__/uploads</string>
+    <key>TCSP_BACKUP_DIR</key>
+    <string>__PERSIST_DIR__/backup</string>
     <key>PATH</key>
     <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>

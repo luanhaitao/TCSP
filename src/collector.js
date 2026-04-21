@@ -1206,6 +1206,12 @@ async function uploadCoverFile() {
         return;
       }
       byId('cover_url').value = result.url;
+      if (result.thumbnailUrl) {
+        byId('cover_url').value = result.thumbnailUrl;
+        setActionStatus('coverUploadStatus', '封面上传成功：检测到GIF，已自动使用第一帧作为封面。');
+        setStatus('封面上传成功：已自动使用GIF第一帧作为封面。');
+        return;
+      }
       setActionStatus('coverUploadStatus', '封面上传成功，已自动填入封面链接。');
       setStatus('封面上传成功，已自动填入封面链接');
     } catch (error) {
@@ -1229,9 +1235,17 @@ async function uploadMediaFile() {
       const result = await uploadLocalFile(file, { publicId: `media_${Date.now()}` });
       byId('media_url').value = result.url;
       byId('media_type').value = result.mediaType;
+      if (result.mediaType === 'image' && result.thumbnailUrl && !byId('thumbnail_url').value.trim()) {
+        byId('thumbnail_url').value = result.thumbnailUrl;
+      }
       if (result.mediaType === 'video' && !byId('thumbnail_url').value.trim()) {
         setActionStatus('mediaUploadStatus', '视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
         setStatus('视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
+        return;
+      }
+      if (result.mediaType === 'image' && result.thumbnailUrl) {
+        setActionStatus('mediaUploadStatus', 'GIF上传成功，已自动生成第一帧缩略图并填入。');
+        setStatus('GIF上传成功，已自动生成第一帧缩略图并填入。');
         return;
       }
       setActionStatus('mediaUploadStatus', '素材上传成功，已自动填入素材链接。');
@@ -1423,11 +1437,11 @@ async function importMediaFromFolder() {
           owner_id: item.ownerId,
           media_type: 'image',
           url: uploaded.url,
-          thumbnail_url: '',
+          thumbnail_url: uploaded.thumbnailUrl || '',
           copyright_status: '',
           notes: `目录导入：${item.file.name}`
         });
-        imageUrlMap.set(`${item.ownerId}::${item.baseName}`, uploaded.url);
+        imageUrlMap.set(`${item.ownerId}::${item.baseName}`, uploaded.thumbnailUrl || uploaded.url);
         stats.success += 1;
       } catch {
         stats.failedUpload += 1;

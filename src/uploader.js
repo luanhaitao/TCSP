@@ -76,6 +76,7 @@ async function uploadToLocal(file, cfg) {
   return {
     url: json.url,
     mediaType: json.mediaType || (String(file.type).startsWith('video/') ? 'video' : 'image'),
+    thumbnailUrl: json.thumbnailUrl || '',
     originalFilename: json.originalFilename || file.name,
     bytes: json.bytes || file.size || 0,
     width: 0,
