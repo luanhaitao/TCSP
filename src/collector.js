@@ -255,6 +255,16 @@ function downloadXlsxWorkbook(wb, filename) {
   downloadBlob(filename, blob);
 }
 
+function triggerServerDownload(url) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function downloadCsvTemplatePair(baseName, headers, sampleRow, guideRows = []) {
   const date = new Date().toISOString().slice(0, 10);
   const templateName = `${baseName}_${date}.csv`;
@@ -624,6 +634,13 @@ function upsertClubDraft(row) {
 
 function downloadClubTemplate() {
   try {
+    if (location.protocol.startsWith('http')) {
+      triggerServerDownload('/api/template/club.csv');
+      setActionStatus('clubImportStatus', '模板下载已开始（CSV）。');
+      setStatus('模板下载已开始。');
+      return;
+    }
+
     const XLSX = tryGetXlsx();
     const sample = {
       社团ID: '',
@@ -762,6 +779,13 @@ function upsertArtifactDraft(row) {
 
 function downloadArtifactTemplate() {
   try {
+    if (location.protocol.startsWith('http')) {
+      triggerServerDownload('/api/template/artifact.csv');
+      setActionStatus('artifactImportStatus', '模板下载已开始（CSV）。');
+      setStatus('模板下载已开始。');
+      return;
+    }
+
     const XLSX = tryGetXlsx();
     const sample = {
       成果ID: '',

@@ -7,7 +7,7 @@ import { parseCsv } from './shared_csv.mjs';
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 8090);
-const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB || 100) * 1024 * 1024;
+const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB || 300) * 1024 * 1024;
 
 const CLUB_HEADERS = [
   'club_id', 'club_name', 'teacher', 'grade_range', 'student_count', 'club_category', 'intro',
@@ -19,6 +19,14 @@ const ARTIFACT_HEADERS = [
 ];
 const MEDIA_HEADERS = [
   'media_id', 'owner_type', 'owner_id', 'media_type', 'url', 'thumbnail_url', 'copyright_status', 'notes'
+];
+const CLUB_TEMPLATE_CN_HEADERS = [
+  '社团ID', '社团名称', '执教教师', '面向年级', '学员人数', '展馆类别', '社团简介',
+  '本学期学了什么', '我们做了什么', '过程亮点', '整体收获', '封面图链接', '展示状态'
+];
+const ARTIFACT_TEMPLATE_CN_HEADERS = [
+  '成果ID', '学员姓名', '年级', '所属社团', '成果名称', '成果类型',
+  '关键词', '我的参与内容', '成果简介', '一句话收获', '成长证据', '教师简评'
 ];
 
 const MIME = {
@@ -135,6 +143,61 @@ function json(res, statusCode, data) {
     ...corsHeaders()
   });
   res.end(JSON.stringify(data));
+}
+
+function todayLabel() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function downloadCsvResponse(res, filename, headers, rows) {
+  const payload = `\uFEFF${toCsv(headers, rows)}`;
+  res.writeHead(200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    ...corsHeaders()
+  });
+  res.end(payload);
+}
+
+function handleTemplateDownload(req, res, pathname) {
+  if (pathname === '/api/template/club.csv') {
+    const row = {
+      社团ID: '',
+      社团名称: '智能编程社',
+      执教教师: '张老师',
+      面向年级: '四-六年级',
+      学员人数: '36',
+      展馆类别: '智能编程馆',
+      社团简介: '围绕编程思维开展项目实践',
+      本学期学了什么: '逻辑;调试;建模',
+      我们做了什么: '完成循迹挑战和红绿灯任务',
+      过程亮点: '两轮迭代优化',
+      整体收获: '协作与表达能力提升',
+      封面图链接: '/uploads/2026-04/example_cover.jpg',
+      展示状态: 'active'
+    };
+    return downloadCsvResponse(res, `club_template_${todayLabel()}.csv`, CLUB_TEMPLATE_CN_HEADERS, [row]);
+  }
+
+  if (pathname === '/api/template/artifact.csv') {
+    const row = {
+      成果ID: '',
+      学员姓名: '张三、李四',
+      年级: '五年级',
+      所属社团: '智能编程社',
+      成果名称: '示例成果名称',
+      成果类型: '作品',
+      关键词: '编程 调试',
+      我的参与内容: '负责核心功能实现',
+      成果简介: '完成了一个可展示的成果',
+      一句话收获: '我学会了拆解复杂任务',
+      成长证据: '经过两轮迭代优化',
+      教师简评: '表达清晰，过程完整'
+    };
+    return downloadCsvResponse(res, `artifact_template_${todayLabel()}.csv`, ARTIFACT_TEMPLATE_CN_HEADERS, [row]);
+  }
+
+  return false;
 }
 
 async function parseJsonBody(req) {
@@ -392,6 +455,10 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/publish' && req.method === 'POST') {
     return handlePublish(req, res);
+  }
+
+  if (req.method === 'GET' && handleTemplateDownload(req, res, pathname) !== false) {
+    return;
   }
 
   return serveStatic(req, res, pathname);
