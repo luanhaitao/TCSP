@@ -396,7 +396,8 @@ function toCsv(headers, rows) {
 }
 
 function downloadCsv(filename, content) {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const withBom = content.startsWith('\uFEFF') ? content : `\uFEFF${content}`;
+  const blob = new Blob([withBom], { type: 'text/csv;charset=utf-8;' });
   downloadBlob(filename, blob);
 }
 
@@ -462,6 +463,19 @@ function downloadCsvTemplatePair(baseName, headers, sampleRow, guideRows = []) {
   if (guideRows.length) {
     downloadCsv(guideName, toCsv(['项目', '说明'], guideRows));
   }
+}
+
+function buildTemplateCsvWithGuide(headers, sampleRow, guideRows = []) {
+  const dataCsv = toCsv(headers, [sampleRow]);
+  if (!guideRows.length) return dataCsv;
+  // CSV 不支持字体样式；用标题文案强调，并让说明固定从第 20 行开始。
+  const guideHeader = '【填写说明（重点）】,内容';
+  const guideLines = guideRows.map((row) => `${csvEscape(row.项目 || '')},${csvEscape(row.说明 || '')}`);
+  const dataLineCount = dataCsv.split('\n').length;
+  const targetGuideLine = 20;
+  const blankLineCount = Math.max(1, targetGuideLine - dataLineCount - 1);
+  const blankLines = '\n'.repeat(blankLineCount + 1);
+  return `${dataCsv}${blankLines}${guideHeader}\n${guideLines.join('\n')}\n`;
 }
 
 function required(v) {
@@ -845,7 +859,6 @@ function upsertClubDraft(row) {
 
 function downloadClubTemplate() {
   try {
-    const XLSX = tryGetXlsx();
     const sample = {
       社团ID: '',
       社团名称: '智能编程社',
@@ -869,21 +882,14 @@ function downloadClubTemplate() {
       { 项目: '可选类别4', 说明: '数字创意馆' },
       { 项目: '可选类别5', 说明: '科学普及馆' },
       { 项目: '可选类别6', 说明: '工程制造馆' },
+      { 项目: '展示状态可选值', 说明: 'active（展示中）或 archived（暂不展示）' },
+      { 项目: '展示状态填写建议', 说明: '默认建议填写 active；仅需下线社团时填写 archived。' },
       { 项目: '填写建议', 说明: '尽量从上述类别中选择，不建议自由发挥写法。' }
     ];
-    if (XLSX) {
-      const ws = XLSX.utils.json_to_sheet([sample], { header: CLUB_CN_HEADERS });
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '社团信息导入模板');
-      const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
-      XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
-      downloadXlsxWorkbook(wb, `club_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      setActionStatus('clubImportStatus', '社团模板下载成功（1个Excel，含“模板+填写说明”两个工作表）。');
-      setStatus('社团模板下载成功（1个Excel，含两个工作表）。');
-      return;
-    }
-
-    throw new Error('模板下载失败：Excel组件未加载成功，请检查网络后重试。');
+    const csvContent = buildTemplateCsvWithGuide(CLUB_CN_HEADERS, sample, guideRows);
+    downloadCsv(`club_template_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
+    setActionStatus('clubImportStatus', '社团模板下载成功（CSV，末尾附填写说明）。');
+    setStatus('社团模板下载成功（CSV，末尾附填写说明）。');
   } catch (error) {
     setActionStatus('clubImportStatus', `社团模板下载失败：${error.message}`, true);
     setStatus(`社团模板下载失败：${error.message}`, true);
@@ -983,7 +989,6 @@ function upsertArtifactDraft(row) {
 
 function downloadArtifactTemplate() {
   try {
-    const XLSX = tryGetXlsx();
     const sample = {
       成果ID: '',
       学员姓名: '张三',
@@ -1006,19 +1011,10 @@ function downloadArtifactTemplate() {
       { 项目: '推荐写法', 说明: '所属社团 = 智能编程社' },
       { 项目: '重名写法', 说明: '所属社团 = C001' }
     ];
-    if (XLSX) {
-      const ws = XLSX.utils.json_to_sheet([sample], { header: ARTIFACT_CN_HEADERS });
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '学员成果导入模板');
-      const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
-      XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
-      downloadXlsxWorkbook(wb, `artifact_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      setActionStatus('artifactImportStatus', '成果模板下载成功（1个Excel，含“模板+填写说明”两个工作表）。');
-      setStatus('成果模板下载成功（1个Excel，含两个工作表）。');
-      return;
-    }
-
-    throw new Error('模板下载失败：Excel组件未加载成功，请检查网络后重试。');
+    const csvContent = buildTemplateCsvWithGuide(ARTIFACT_CN_HEADERS, sample, guideRows);
+    downloadCsv(`artifact_template_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
+    setActionStatus('artifactImportStatus', '成果模板下载成功（CSV，末尾附填写说明）。');
+    setStatus('成果模板下载成功（CSV，末尾附填写说明）。');
   } catch (error) {
     setActionStatus('artifactImportStatus', `成果模板下载失败：${error.message}`, true);
     setStatus(`模板下载失败：${error.message}`, true);

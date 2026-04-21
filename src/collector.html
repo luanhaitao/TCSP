@@ -43,10 +43,10 @@
         <p class="hint">带 <span class="req">*</span> 为必填。系统可自动生成 `社团ID`。</p>
         <div class="import-tools">
           <button id="downloadClubTemplate" class="btn btn-light" type="button">下载社团导入模板</button>
-          <input id="clubImportFile" type="file" accept=".xlsx,.xls" />
+          <input id="clubImportFile" type="file" accept=".csv,.xlsx,.xls" />
           <button id="importClubBtn" class="btn" type="button">一键导入社团</button>
         </div>
-        <p id="clubImportStatus" class="action-status">可先下载模板，再选择 Excel 一键导入。</p>
+        <p id="clubImportStatus" class="action-status">可先下载模板，再选择 CSV/Excel 一键导入。</p>
         <p class="small">模板字段为中文表头。导入时支持新增和按“社团ID”覆盖更新。</p>
         <div class="grid">
           <label>社团ID <span class="req">*</span>
@@ -94,11 +94,11 @@
         <p class="hint">系统将自动生成 `成果ID`、`更新时间`，学员姓名请手动填写。</p>
         <div class="import-tools">
           <button id="downloadArtifactTemplate" class="btn btn-light" type="button">下载成果导入模板</button>
-          <input id="artifactImportFile" type="file" accept=".xlsx,.xls" />
+          <input id="artifactImportFile" type="file" accept=".csv,.xlsx,.xls" />
           <button id="importArtifactBtn" class="btn" type="button">一键导入成果</button>
         </div>
         <p id="artifactImportStatus" class="action-status">支持新增或按成果ID覆盖更新。</p>
-        <p class="small">模板字段均为中文表头。导入时支持新增和按“成果ID”覆盖更新。</p>
+        <p class="small">模板字段均为中文表头。导入时支持 CSV/Excel 新增和按“成果ID”覆盖更新。</p>
         <div class="grid">
           <label>成果ID <span class="req">*</span>
             <div class="inline">

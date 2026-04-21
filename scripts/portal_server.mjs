@@ -394,6 +394,8 @@ function handleTemplateDownload(req, res, pathname) {
       { 项目: '可选类别4', 说明: '数字创意馆' },
       { 项目: '可选类别5', 说明: '科学普及馆' },
       { 项目: '可选类别6', 说明: '工程制造馆' },
+      { 项目: '展示状态可选值', 说明: 'active（展示中）或 archived（暂不展示）' },
+      { 项目: '展示状态填写建议', 说明: '默认建议填写 active；仅需下线社团时填写 archived。' },
       { 项目: '填写建议', 说明: '尽量从上述类别中选择，不建议自由发挥写法。' }
     ];
     return downloadCsvResponse(res, `club_template_guide_${todayLabel()}.csv`, ['项目', '说明'], rows);
