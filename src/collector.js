@@ -372,6 +372,43 @@ function parseIdNumber(id, prefix) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizeHeaderName(name) {
+  return String(name ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function normalizeRowKeys(row) {
+  const out = {};
+  Object.entries(row || {}).forEach(([k, v]) => {
+    out[normalizeHeaderName(k)] = v;
+  });
+  return out;
+}
+
+function rowHasAnyValue(row) {
+  return Object.values(row || {}).some((v) => String(v ?? '').trim() !== '');
+}
+
+async function readWorkbookRows(file) {
+  const XLSX = getXlsx();
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  let wb;
+  if (ext === 'csv') {
+    let text = await file.text();
+    text = text.replace(/^\uFEFF?sep=.+\r?\n/i, '');
+    wb = XLSX.read(text, { type: 'string' });
+  } else {
+    const buffer = await file.arrayBuffer();
+    wb = XLSX.read(buffer, { type: 'array' });
+  }
+  const firstName = wb.SheetNames[0];
+  if (!firstName) throw new Error('导入失败：文件没有可读取的数据表。');
+  const ws = wb.Sheets[firstName];
+  return XLSX.utils.sheet_to_json(ws, { defval: '' }).map(normalizeRowKeys).filter(rowHasAnyValue);
+}
+
 function nextId(prefix, baseList, draftList, keyName) {
   const maxBase = baseList.reduce((max, item) => Math.max(max, parseIdNumber(item[keyName], prefix)), 0);
   const maxDraft = draftList.reduce((max, item) => Math.max(max, parseIdNumber(item[keyName], prefix)), 0);
@@ -835,11 +872,12 @@ function getNextClubId() {
 }
 
 function createClubRowFromChinese(sourceRow) {
+  const source = normalizeRowKeys(sourceRow);
   const row = {};
   for (const key of CLUB_HEADERS) row[key] = '';
 
   for (const [cn, internal] of Object.entries(CLUB_CN_TO_KEY)) {
-    row[internal] = String(sourceRow[cn] ?? '').trim();
+    row[internal] = String(source[normalizeHeaderName(cn)] ?? '').trim();
   }
 
   if (!row.club_id) row.club_id = getNextClubId();
@@ -907,19 +945,8 @@ async function importClubExcel() {
   setActionStatus('clubImportStatus', '正在导入社团数据，请稍候...');
   await setButtonBusy('importClubBtn', '正在导入...', async () => {
     try {
-      const XLSX = getXlsx();
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const firstName = wb.SheetNames[0];
-      if (!firstName) throw new Error('Excel 文件没有可读取的工作表。');
-
-      const ws = wb.Sheets[firstName];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      if (!rows.length) throw new Error('导入失败：Excel 没有数据行。');
-
-      if (!('社团名称' in rows[0]) || !('执教教师' in rows[0])) {
-        throw new Error('导入失败：缺少必要字段“社团名称”或“执教教师”。');
-      }
+      const rows = await readWorkbookRows(file);
+      if (!rows.length) throw new Error('导入失败：文件没有数据行。');
 
       let inserted = 0;
       let updated = 0;
@@ -954,20 +981,21 @@ async function importClubExcel() {
 }
 
 function createArtifactRowFromChinese(sourceRow) {
+  const source = normalizeRowKeys(sourceRow);
   const row = {};
   for (const key of ARTIFACT_HEADERS) row[key] = '';
 
   for (const [cn, internal] of Object.entries(ARTIFACT_CN_TO_KEY)) {
-    row[internal] = String(sourceRow[cn] ?? '').trim();
+    row[internal] = String(source[normalizeHeaderName(cn)] ?? '').trim();
   }
   // 兼容旧模板字段“学员化名”
   if (!row.student_alias) {
-    row.student_alias = String(sourceRow['学员化名'] ?? '').trim();
+    row.student_alias = String(source['学员化名'] ?? '').trim();
   }
 
   // 兼容旧模板字段“所属社团ID”
   if (!row.club_id) {
-    row.club_id = String(sourceRow['所属社团ID'] ?? '').trim();
+    row.club_id = String(source['所属社团ID'] ?? '').trim();
   }
 
   if (!row.artifact_id) row.artifact_id = getNextArtifactId();
@@ -1032,17 +1060,11 @@ async function importArtifactExcel() {
   setActionStatus('artifactImportStatus', '正在导入成果数据，请稍候...');
   await setButtonBusy('importArtifactBtn', '正在导入...', async () => {
     try {
-      const XLSX = getXlsx();
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const firstName = wb.SheetNames[0];
-      if (!firstName) throw new Error('Excel 文件没有可读取的工作表。');
+      const rows = await readWorkbookRows(file);
+      if (!rows.length) throw new Error('导入失败：文件没有数据行。');
 
-      const ws = wb.Sheets[firstName];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      if (!rows.length) throw new Error('导入失败：Excel 没有数据行。');
-
-      const missingHeaders = ARTIFACT_CN_HEADERS.filter((h) => !(h in rows[0]));
+      const firstHeaders = new Set(Object.keys(rows[0] || {}).map(normalizeHeaderName));
+      const missingHeaders = ARTIFACT_CN_HEADERS.filter((h) => !firstHeaders.has(normalizeHeaderName(h)));
       if (missingHeaders.length) {
         throw new Error(`导入失败：缺少字段 ${missingHeaders.join('、')}`);
       }
