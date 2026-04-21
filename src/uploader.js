@@ -27,7 +27,7 @@ async function fetchWithTimeout(resource, options = {}, timeoutMs = 45000) {
 
 async function uploadToLocal(file, cfg) {
   const endpoint = cfg.local?.apiUrl || '/api/upload';
-  const maxSizeMb = Number(cfg.local?.maxSizeMb || 100);
+  const maxSizeMb = Number(cfg.local?.maxSizeMb || 300);
   const maxBytes = maxSizeMb * 1024 * 1024;
 
   if (file.size > maxBytes) {
