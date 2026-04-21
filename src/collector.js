@@ -230,18 +230,35 @@ function toCsv(headers, rows) {
 
 function downloadCsv(filename, content) {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  downloadBlob(filename, blob);
+}
+
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
+}
+
+function downloadXlsxWorkbook(wb, filename) {
+  const XLSX = getXlsx();
+  const bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  downloadBlob(filename, blob);
 }
 
 function downloadCsvTemplatePair(baseName, headers, sampleRow, guideRows = []) {
   const date = new Date().toISOString().slice(0, 10);
   const templateName = `${baseName}_${date}.csv`;
-  const guideName = `${baseName}_填写说明_${date}.csv`;
+  const guideName = `${baseName}_guide_${date}.csv`;
   downloadCsv(templateName, toCsv(headers, [sampleRow]));
   if (guideRows.length) {
     downloadCsv(guideName, toCsv(['项目', '说明'], guideRows));
@@ -637,13 +654,13 @@ function downloadClubTemplate() {
       XLSX.utils.book_append_sheet(wb, ws, '社团信息导入模板');
       const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
       XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
-      XLSX.writeFile(wb, `社团信息导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      downloadXlsxWorkbook(wb, `club_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
       setActionStatus('clubImportStatus', '社团模板下载成功，可直接填写后导入。');
       setStatus('社团模板下载成功，可直接填写后导入。');
       return;
     }
 
-    downloadCsvTemplatePair('社团信息导入模板', CLUB_CN_HEADERS, sample, guideRows);
+    downloadCsvTemplatePair('club_template', CLUB_CN_HEADERS, sample, guideRows);
     setActionStatus('clubImportStatus', 'Excel组件不可用，已自动下载 CSV 模板与填写说明。');
     setStatus('已下载 CSV 模板（离线模式）。');
   } catch (error) {
@@ -774,13 +791,13 @@ function downloadArtifactTemplate() {
       XLSX.utils.book_append_sheet(wb, ws, '学员成果导入模板');
       const guideWs = XLSX.utils.json_to_sheet(guideRows, { header: ['项目', '说明'] });
       XLSX.utils.book_append_sheet(wb, guideWs, '填写说明');
-      XLSX.writeFile(wb, `学员成果导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      downloadXlsxWorkbook(wb, `artifact_template_${new Date().toISOString().slice(0, 10)}.xlsx`);
       setActionStatus('artifactImportStatus', '成果模板下载成功，可直接填写后导入。');
       setStatus('模板下载成功，可直接填写后导入。');
       return;
     }
 
-    downloadCsvTemplatePair('学员成果导入模板', ARTIFACT_CN_HEADERS, sample, guideRows);
+    downloadCsvTemplatePair('artifact_template', ARTIFACT_CN_HEADERS, sample, guideRows);
     setActionStatus('artifactImportStatus', 'Excel组件不可用，已自动下载 CSV 模板与填写说明。');
     setStatus('已下载 CSV 模板（离线模式）。');
   } catch (error) {
