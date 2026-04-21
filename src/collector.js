@@ -410,7 +410,8 @@ function downloadBlob(filename, blob) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // 避免部分浏览器在下载启动前释放 URL，导致出现 .crdownload 卡住
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
 }
 
 function downloadXlsxWorkbook(wb, filename) {
