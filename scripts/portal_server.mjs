@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import url from 'node:url';
 import { spawn } from 'node:child_process';
@@ -863,6 +864,84 @@ async function handleCollectorBase(req, res) {
   });
 }
 
+function safeFolderPart(text, fallback = '未命名成果') {
+  const normalized = String(text || '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized || fallback;
+}
+
+async function handleArtifactFoldersExport(req, res) {
+  const session = getSession(req);
+  if (!session) return unauthorized(res);
+
+  const base = await loadAllBaseTables();
+  const scoped = isAdminSession(session) ? base : filterBaseByScope(base, session.clubIds || []);
+  const artifacts = sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS);
+  if (!artifacts.length) {
+    return json(res, 400, { ok: false, message: '当前权限范围内暂无成果，无法导出目录结构。' });
+  }
+
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const rootDirName = `素材目录模板_${stamp}`;
+  const tempBase = await fs.mkdtemp(path.join(os.tmpdir(), 'tcsp-artifact-folders-'));
+  const exportRoot = path.join(tempBase, rootDirName);
+
+  try {
+    await fs.mkdir(exportRoot, { recursive: true });
+    for (const row of artifacts) {
+      const artifactId = String(row.artifact_id || '').trim();
+      if (!artifactId) continue;
+      const artifactName = safeFolderPart(row.artifact_name || '');
+      const folderName = `${artifactId}_${artifactName}`;
+      const folderPath = path.join(exportRoot, folderName);
+      await fs.mkdir(folderPath, { recursive: true });
+      await fs.writeFile(
+        path.join(folderPath, '请将素材放在此目录.txt'),
+        '请将该成果的图片/视频/PDF放在当前目录，然后在收集器里执行目录一键导入。\n',
+        'utf8'
+      );
+    }
+
+    const zipFilename = `artifact_folders_template_${stamp}.zip`;
+    const zip = spawn('zip', ['-r', '-', rootDirName], { cwd: tempBase });
+    let stderr = '';
+    zip.stderr.on('data', (buf) => { stderr += String(buf || ''); });
+    zip.on('error', async (err) => {
+      await fs.rm(tempBase, { recursive: true, force: true });
+      if (!res.headersSent) {
+        const msg = err?.code === 'ENOENT'
+          ? '服务器缺少 zip 命令，无法导出目录压缩包。'
+          : `导出失败：${err.message}`;
+        json(res, 500, { ok: false, message: msg });
+      } else {
+        res.destroy();
+      }
+    });
+
+    res.writeHead(200, {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${zipFilename}"; filename*=UTF-8''${encodeURIComponent(zipFilename)}`,
+      'Cache-Control': 'no-store',
+      ...corsHeaders()
+    });
+    zip.stdout.pipe(res);
+    zip.on('close', async (code) => {
+      await fs.rm(tempBase, { recursive: true, force: true });
+      if (code !== 0 && !res.writableEnded) {
+        res.end();
+      }
+      if (code !== 0) {
+        console.error(`导出素材目录模板失败: zip exit ${code}. ${stderr.trim()}`);
+      }
+    });
+  } catch (error) {
+    await fs.rm(tempBase, { recursive: true, force: true });
+    return json(res, 500, { ok: false, message: `导出目录结构失败：${error.message}` });
+  }
+}
+
 async function serveStatic(req, res, pathname) {
   let rel = pathname === '/' ? '/src/index.html' : pathname;
   if (rel === '/collector') rel = '/src/collector.html';
@@ -941,6 +1020,10 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/collector/base' && req.method === 'GET') {
     return handleCollectorBase(req, res);
+  }
+
+  if (pathname === '/api/artifact-folders/export' && req.method === 'GET') {
+    return handleArtifactFoldersExport(req, res);
   }
 
   if (pathname === '/api/upload' && req.method === 'POST') {

@@ -1595,6 +1595,53 @@ function bindArtifactImportActions() {
   byId('importArtifactBtn').addEventListener('click', importArtifactExcel);
 }
 
+function parseDownloadFilename(contentDisposition, fallbackName) {
+  const raw = String(contentDisposition || '');
+  const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = raw.match(/filename="?([^";]+)"?/i);
+  if (plainMatch?.[1]) return plainMatch[1];
+  return fallbackName;
+}
+
+async function exportArtifactFolders() {
+  setActionStatus('artifactFolderStatus', '正在生成目录结构模板，请稍候...');
+  setStatus('正在生成目录结构模板，请稍候...');
+  await setButtonBusy('exportArtifactFolders', '正在导出...', async () => {
+    try {
+      const resp = await fetch('/api/artifact-folders/export', {
+        method: 'GET',
+        credentials: 'same-origin'
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data?.message || `HTTP ${resp.status}`);
+      }
+      const blob = await resp.blob();
+      const fallback = `artifact_folders_template_${new Date().toISOString().slice(0, 10)}.zip`;
+      const filename = parseDownloadFilename(resp.headers.get('Content-Disposition'), fallback);
+      downloadBlob(filename, blob);
+      setActionStatus('artifactFolderStatus', '目录结构模板导出成功，请解压后使用。');
+      setStatus('目录结构模板导出成功，请解压后使用。');
+    } catch (error) {
+      setActionStatus('artifactFolderStatus', `目录结构模板导出失败：${error.message}`, true);
+      setStatus(`目录结构模板导出失败：${error.message}`, true);
+    }
+  });
+}
+
+function bindArtifactFolderExportAction() {
+  const btn = byId('exportArtifactFolders');
+  if (!btn) return;
+  btn.addEventListener('click', exportArtifactFolders);
+}
+
 function createMediaIdGenerator() {
   const maxId = allMedia().reduce((max, item) => {
     const n = parseIdNumber(String(item.media_id || ''), 'M');
@@ -1906,6 +1953,7 @@ function init() {
   bindLoadButton();
   bindClubImportActions();
   bindArtifactImportActions();
+  bindArtifactFolderExportAction();
   bindMediaFolderImportActions();
   bindUploadActions();
   bindPublishAction();
