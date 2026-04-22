@@ -7,6 +7,9 @@
     "serve:portal": "node scripts/portal_server.mjs",
     "validate:data": "node scripts/validate_data.mjs",
     "backup:data": "node scripts/backup_snapshot.mjs",
-    "restore:data": "node scripts/restore_snapshot.mjs"
+    "restore:data": "node scripts/restore_snapshot.mjs",
+    "migrate:export": "node scripts/migrate_export.mjs",
+    "migrate:import": "node scripts/migrate_import.mjs",
+    "restore:admin-backup": "node scripts/restore_admin_backup.mjs"
   }
 }

@@ -153,6 +153,15 @@ async function ensureRuntimeDirs() {
   await fs.mkdir(BACKUP_DIR, { recursive: true });
 }
 
+async function pathExists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseCookies(req) {
   const raw = String(req.headers.cookie || '');
   const out = {};
@@ -864,6 +873,74 @@ async function handleCollectorBase(req, res) {
   });
 }
 
+function runTar(args, cwd = undefined) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('tar', args, cwd ? { cwd } : undefined);
+    let stderr = '';
+    proc.stderr.on('data', (buf) => { stderr += String(buf || ''); });
+    proc.on('error', (err) => reject(err));
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `tar 退出码 ${code}`));
+    });
+  });
+}
+
+function backupFileLabel() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+async function createAdminBackupArchive() {
+  await ensureRuntimeDirs();
+  const outputDir = path.join(BACKUP_DIR, 'migrations');
+  await fs.mkdir(outputDir, { recursive: true });
+  const fileName = `tcsp_full_backup_${backupFileLabel()}.tar.gz`;
+  const outputPath = path.join(outputDir, fileName);
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tcsp-admin-backup-'));
+  const dataLink = path.join(tempDir, 'data');
+  const uploadLink = path.join(tempDir, 'uploads');
+  const metaFile = path.join(tempDir, 'meta.json');
+
+  try {
+    await fs.symlink(DATA_DIR, dataLink, 'dir');
+    if (await pathExists(UPLOADS_DIR)) {
+      await fs.symlink(UPLOADS_DIR, uploadLink, 'dir');
+    } else {
+      await fs.mkdir(uploadLink, { recursive: true });
+    }
+    await fs.writeFile(metaFile, JSON.stringify({
+      created_at: new Date().toISOString(),
+      source_data_dir: DATA_DIR,
+      source_uploads_dir: UPLOADS_DIR
+    }, null, 2), 'utf8');
+
+    await runTar(['-czhf', outputPath, '-C', tempDir, 'data', 'uploads', 'meta.json']);
+    return { fileName, outputPath };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function handleAdminBackup(req, res) {
+  const session = getSession(req);
+  if (!session) return unauthorized(res);
+  if (!isAdminSession(session)) return forbidden(res, '仅超级管理员可执行此操作。');
+
+  try {
+    const backup = await createAdminBackupArchive();
+    return json(res, 200, {
+      ok: true,
+      file: path.relative(ROOT, backup.outputPath),
+      absoluteFile: backup.outputPath,
+      message: '备份成功',
+      restoreCommand: `node scripts/restore_admin_backup.mjs \"${backup.outputPath}\"`
+    });
+  } catch (error) {
+    return json(res, 500, { ok: false, message: `备份失败：${error.message}` });
+  }
+}
+
 function safeFolderPart(text, fallback = '未命名成果') {
   const normalized = String(text || '')
     .replace(/[\\/:*?"<>|]/g, '_')
@@ -1020,6 +1097,10 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/collector/base' && req.method === 'GET') {
     return handleCollectorBase(req, res);
+  }
+
+  if (pathname === '/api/admin/backup' && req.method === 'POST') {
+    return handleAdminBackup(req, res);
   }
 
   if (pathname === '/api/artifact-folders/export' && req.method === 'GET') {

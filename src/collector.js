@@ -165,6 +165,7 @@ function applyAuthUi() {
   const loginBox = byId('loginBox');
   const sessionBox = byId('sessionBox');
   const authSummary = byId('authSummary');
+  const adminBackupBtn = byId('adminBackupBtn');
   if (!main || !loginBox || !sessionBox || !authSummary) return;
 
   if (!state.auth.authenticated) {
@@ -172,6 +173,7 @@ function applyAuthUi() {
     loginBox.classList.remove('is-hidden');
     sessionBox.classList.add('is-hidden');
     authSummary.textContent = '';
+    if (adminBackupBtn) adminBackupBtn.classList.add('is-hidden');
     setClubImportEnabled(false);
     return;
   }
@@ -182,6 +184,7 @@ function applyAuthUi() {
   if (state.auth.role === 'admin') {
     authSummary.textContent = `当前身份：超级管理员（${state.auth.displayName}）`;
     setClubImportEnabled(true);
+    if (adminBackupBtn) adminBackupBtn.classList.remove('is-hidden');
   } else {
     const clubNameMap = new Map((state.base.clubs || []).map((c) => [String(c.club_id || ''), String(c.club_name || '').trim()]));
     const labels = (state.auth.clubIds || [])
@@ -193,6 +196,7 @@ function applyAuthUi() {
     const clubText = labels.length ? `（${labels.join('、')}）` : '';
     authSummary.textContent = `当前身份：教师（${state.auth.displayName}），可管理社团 ${state.auth.clubIds.length} 个${clubText}`;
     setClubImportEnabled(false);
+    if (adminBackupBtn) adminBackupBtn.classList.add('is-hidden');
   }
 }
 
@@ -1585,6 +1589,36 @@ function bindLoadButton() {
   byId('loadBtn').addEventListener('click', loadBaseData);
 }
 
+async function triggerAdminBackup() {
+  if (state.auth.role !== 'admin') {
+    setActionStatus('backupStatus', '仅超级管理员可执行一键备份。', true);
+    setStatus('仅超级管理员可执行一键备份。', true);
+    return;
+  }
+
+  setActionStatus('backupStatus', '正在打包备份（三张表 + 上传素材），请稍候...');
+  setStatus('正在打包备份，请稍候...');
+  await setButtonBusy('adminBackupBtn', '正在备份...', async () => {
+    try {
+      const result = await apiJson('/api/admin/backup', { method: 'POST' });
+      setActionStatus(
+        'backupStatus',
+        `备份成功：${result.file || ''}。可在服务器执行：${result.restoreCommand || 'node scripts/restore_admin_backup.mjs <备份包路径>'}`
+      );
+      setStatus('管理员一键备份成功。');
+    } catch (error) {
+      setActionStatus('backupStatus', `备份失败：${error.message}`, true);
+      setStatus(`备份失败：${error.message}`, true);
+    }
+  });
+}
+
+function bindAdminBackupAction() {
+  const btn = byId('adminBackupBtn');
+  if (!btn) return;
+  btn.addEventListener('click', triggerAdminBackup);
+}
+
 function bindClubImportActions() {
   byId('downloadClubTemplate').addEventListener('click', downloadClubTemplate);
   byId('importClubBtn').addEventListener('click', importClubExcel);
@@ -1976,6 +2010,7 @@ function init() {
   bindExports();
   bindOwnerTypeChange();
   bindLoadButton();
+  bindAdminBackupAction();
   bindClubImportActions();
   bindArtifactImportActions();
   bindArtifactFolderExportAction();
