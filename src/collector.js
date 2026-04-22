@@ -135,6 +135,9 @@ const state = {
     role: '',
     displayName: '',
     clubIds: []
+  },
+  mediaImport: {
+    files: []
   }
 };
 
@@ -559,6 +562,9 @@ function detectMediaTypeFromFile(file) {
 function getArtifactFolderNameFromRelativePath(relativePath) {
   const parts = String(relativePath || '').split('/').filter(Boolean);
   if (parts.length < 2) return '';
+  const dirParts = parts.slice(0, -1);
+  const matched = dirParts.find((part) => MEDIA_FOLDER_PATTERN.test(part));
+  if (matched) return matched;
   if (parts.length === 2) return parts[0];
   return parts[1];
 }
@@ -1639,9 +1645,38 @@ function pushMediaDraftRows(rows) {
   refreshSelectOptions();
 }
 
+function mediaFolderFileKey(file) {
+  const rel = String(file.webkitRelativePath || file.name || '');
+  return `${rel}::${file.size}::${file.lastModified}`;
+}
+
+function updateMediaFolderPickedText() {
+  const pickedEl = byId('mediaFolderPicked');
+  if (!pickedEl) return;
+  const files = state.mediaImport.files || [];
+  if (!files.length) {
+    pickedEl.textContent = '未选择目录';
+    return;
+  }
+  const roots = new Set();
+  files.forEach((f) => {
+    const rel = String(f.webkitRelativePath || '');
+    const root = rel.split('/').filter(Boolean)[0];
+    if (root) roots.add(root);
+  });
+  const rootList = [...roots];
+  if (rootList.length <= 1) {
+    const rootName = rootList[0] || '已选目录';
+    pickedEl.textContent = `已选择目录：${rootName}（共 ${files.length} 个文件）`;
+    return;
+  }
+  const preview = rootList.slice(0, 3).join('、');
+  const suffix = rootList.length > 3 ? ` 等${rootList.length}个目录` : '';
+  pickedEl.textContent = `已选择目录：${preview}${suffix}（共 ${files.length} 个文件）`;
+}
+
 async function importMediaFromFolder() {
-  const input = byId('mediaFolderInput');
-  const files = Array.from(input.files || []);
+  const files = Array.from(state.mediaImport.files || []);
   setActionStatus('mediaImportResult', '');
 
   if (!files.length) {
@@ -1767,14 +1802,24 @@ function bindMediaFolderImportActions() {
 
   byId('mediaFolderInput').addEventListener('change', (event) => {
     const files = Array.from(event.target.files || []);
-    const pickedEl = byId('mediaFolderPicked');
-    if (!files.length) {
-      pickedEl.textContent = '未选择目录';
-      return;
-    }
-    const firstPath = String(files[0].webkitRelativePath || '');
-    const rootName = firstPath.split('/').filter(Boolean)[0] || '已选目录';
-    pickedEl.textContent = `已选择目录：${rootName}（共 ${files.length} 个文件）`;
+    if (!files.length) return;
+    const keySet = new Set((state.mediaImport.files || []).map(mediaFolderFileKey));
+    files.forEach((file) => {
+      const key = mediaFolderFileKey(file);
+      if (keySet.has(key)) return;
+      state.mediaImport.files.push(file);
+      keySet.add(key);
+    });
+    updateMediaFolderPickedText();
+    event.target.value = '';
+  });
+
+  byId('clearMediaFolderBtn').addEventListener('click', () => {
+    state.mediaImport.files = [];
+    byId('mediaFolderInput').value = '';
+    updateMediaFolderPickedText();
+    setActionStatus('mediaImportResult', '已清空已选目录，可重新选择。');
+    setStatus('已清空已选目录，可重新选择。');
   });
 
   byId('importMediaFolderBtn').addEventListener('click', importMediaFromFolder);
