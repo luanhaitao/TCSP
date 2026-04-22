@@ -14,7 +14,6 @@ const dialogEl = document.getElementById('artifactDialog');
 const dialogBodyEl = document.getElementById('dialogBody');
 const syncMetaEl = document.getElementById('syncMeta');
 const refreshBtn = document.getElementById('refreshBtn');
-const heroBgEl = document.querySelector('.hero-bg');
 
 const state = {
   clubs: [],
@@ -120,27 +119,6 @@ function getMediaForArtifact(artifactId) {
 
 function getMediaForClub(clubId) {
   return state.media.filter((m) => m.owner_type === 'club' && m.owner_id === clubId);
-}
-
-function renderHeroBackdrop() {
-  if (!heroBgEl) return;
-  const imageUrls = state.media
-    .filter((m) => isNonGifImageMedia(m))
-    .map((m) => m.url);
-
-  if (!imageUrls.length) {
-    heroBgEl.innerHTML = '';
-    return;
-  }
-
-  const selected = imageUrls.slice(-3);
-  const tiles = selected
-    .map((url, idx) => {
-      const safeUrl = String(url).replaceAll('"', '%22').replaceAll("'", '%27');
-      return `<span class="hero-tile hero-tile-${(idx % 4) + 1}" style="background-image:url(&quot;${safeUrl}&quot;)"></span>`;
-    })
-    .join('');
-  heroBgEl.innerHTML = `<div class="hero-wall">${tiles}</div>`;
 }
 
 function renderStats() {
@@ -397,7 +375,6 @@ async function boot() {
     buildFilters();
     state.filteredArtifacts = [...state.artifacts];
     state.filteredClubs = [...state.clubs];
-    renderHeroBackdrop();
     renderStats();
     renderClubs();
     renderArtifacts();

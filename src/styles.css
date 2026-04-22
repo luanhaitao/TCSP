@@ -36,10 +36,13 @@ body {
   position: absolute;
   inset: 0;
   background:
+    linear-gradient(120deg, rgba(2, 20, 48, 0.66), rgba(0, 58, 106, 0.6) 48%, rgba(5, 113, 138, 0.52)),
     radial-gradient(120% 120% at 10% 0%, rgba(63, 164, 255, 0.35) 0%, rgba(63, 164, 255, 0) 55%),
     radial-gradient(120% 120% at 95% 100%, rgba(0, 224, 255, 0.26) 0%, rgba(0, 224, 255, 0) 58%),
+    url('./assets/hero-title-generated.png') center / contain no-repeat,
+    url('./assets/hero-title-generated.png') center / cover no-repeat,
     linear-gradient(120deg, rgba(3, 28, 68, 0.94), rgba(0, 67, 122, 0.90) 48%, rgba(7, 130, 154, 0.86));
-  transform: scale(1.1);
+  transform: none;
 }
 
 .hero-bg::before {
@@ -59,37 +62,6 @@ body {
   inset: 0;
   background: linear-gradient(180deg, rgba(5, 16, 38, 0.38) 0%, rgba(5, 16, 38, 0.55) 100%);
 }
-
-.hero-wall {
-  position: absolute;
-  top: -3%;
-  right: -2%;
-  bottom: -3%;
-  width: min(58vw, 820px);
-  z-index: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  grid-template-rows: 1fr;
-  justify-content: end;
-  gap: 12px;
-  opacity: 0.34;
-  transform: perspective(1000px) rotateX(4deg) rotateY(-1.5deg) scale(1.02);
-}
-
-.hero-tile {
-  display: block;
-  border-radius: 12px;
-  height: 100%;
-  background-size: cover;
-  background-position: center;
-  border: 1px solid rgba(187, 226, 255, 0.35);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
-}
-
-.hero-tile-1 { transform: translateY(0px) rotate(-1.2deg); }
-.hero-tile-2 { transform: translateY(-6px) rotate(0.9deg); }
-.hero-tile-3 { transform: translateY(4px) rotate(-0.8deg); }
-.hero-tile-4 { transform: translateY(-3px) rotate(1.3deg); }
 
 .hero-content {
   position: relative;
@@ -360,12 +332,6 @@ select {
   }
   .hero-brand-logo { width: 132px; }
   h1 { margin-top: 76px; }
-  .hero-wall {
-    width: min(66vw, 520px);
-    grid-template-columns: repeat(3, minmax(100px, 1fr));
-    gap: 8px;
-    opacity: 0.26;
-  }
   .hero-actions { display: grid; grid-template-columns: 1fr; }
   .btn { text-align: center; }
 }
