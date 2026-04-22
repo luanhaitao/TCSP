@@ -77,7 +77,7 @@ const ARTIFACT_TYPES = new Set(['作品', '任务', '探究', '表达']);
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm']);
 const DOC_EXTS = new Set(['pdf']);
-const MEDIA_FOLDER_PATTERN = /^([A-Za-z]\\d+)_/;
+const MEDIA_FOLDER_PATTERN = /^([A-Za-z]\d+)_/;
 const TABLE_HEADER_LABELS = {
   clubs: {
     club_id: '社团ID',
@@ -559,6 +559,17 @@ function detectMediaTypeFromFile(file) {
   return '';
 }
 
+function isIgnorableSystemFile(file) {
+  const rel = String(file?.webkitRelativePath || file?.name || '').replace(/\\/g, '/');
+  const parts = rel.split('/').filter(Boolean);
+  const fileName = String(file?.name || '').toLowerCase();
+  if (!parts.length) return false;
+  if (parts.some((p) => p === '__MACOSX')) return true;
+  if (fileName === '.ds_store' || fileName === 'thumbs.db' || fileName === 'desktop.ini') return true;
+  if (fileName.startsWith('._')) return true;
+  return false;
+}
+
 function getArtifactFolderNameFromRelativePath(relativePath) {
   const parts = String(relativePath || '').split('/').filter(Boolean);
   if (parts.length < 2) return '';
@@ -585,11 +596,14 @@ function setActiveTab(tabName) {
 }
 
 function allClubs() {
+  const teacherScope = new Set((state.auth.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
+  const enforceTeacherScope = state.auth.role === 'teacher' && teacherScope.size > 0;
   const map = new Map();
   const order = [];
   [...state.base.clubs, ...state.drafts.clubs].forEach((club) => {
     const id = String(club.club_id || '').trim();
     if (!id) return;
+    if (enforceTeacherScope && !teacherScope.has(id)) return;
     if (!map.has(id)) order.push(id);
     map.set(id, club);
   });
@@ -597,11 +611,15 @@ function allClubs() {
 }
 
 function allArtifacts() {
+  const teacherScope = new Set((state.auth.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
+  const enforceTeacherScope = state.auth.role === 'teacher' && teacherScope.size > 0;
   const map = new Map();
   const order = [];
   [...state.base.artifacts, ...state.drafts.artifacts].forEach((artifact) => {
     const id = String(artifact.artifact_id || '').trim();
     if (!id) return;
+    const clubId = String(artifact.club_id || '').trim();
+    if (enforceTeacherScope && !teacherScope.has(clubId)) return;
     if (!map.has(id)) order.push(id);
     map.set(id, artifact);
   });
@@ -1080,7 +1098,10 @@ async function importArtifactExcel() {
       let skipped = 0;
       let ambiguousClub = 0;
       let notFoundClub = 0;
+      let outOfScopeClub = 0;
       const clubs = allClubs();
+      const teacherScope = new Set((state.auth.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
+      const enforceTeacherScope = state.auth.role === 'teacher' && teacherScope.size > 0;
 
       for (const raw of rows) {
         const row = createArtifactRowFromChinese(raw);
@@ -1097,6 +1118,11 @@ async function importArtifactExcel() {
           continue;
         }
         row.club_id = resolved.clubId;
+        if (enforceTeacherScope && !teacherScope.has(String(row.club_id || '').trim())) {
+          outOfScopeClub += 1;
+          skipped += 1;
+          continue;
+        }
 
         if (!required(row.grade) || !required(row.club_id) || !required(row.artifact_name)) {
           skipped += 1;
@@ -1118,6 +1144,7 @@ async function importArtifactExcel() {
       const extra = [];
       if (ambiguousClub) extra.push(`同名社团无法判定 ${ambiguousClub} 条（请改填社团ID）`);
       if (notFoundClub) extra.push(`未匹配到社团 ${notFoundClub} 条`);
+      if (outOfScopeClub) extra.push(`超出当前教师可管理社团范围 ${outOfScopeClub} 条`);
       setActionStatus('artifactImportStatus', `导入完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条。${extra.join('；')}`);
       setStatus(`导入完成：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条。${extra.join('；')}`);
     } catch (error) {
@@ -1582,21 +1609,31 @@ function buildArtifactIdMap() {
   allArtifacts().forEach((item) => {
     const id = String(item.artifact_id || '').trim();
     if (!id) return;
-    map.set(id.toUpperCase(), id);
+    map.set(id.toUpperCase(), {
+      artifactId: id,
+      clubId: String(item.club_id || '').trim(),
+      artifactName: String(item.artifact_name || '').trim()
+    });
   });
   return map;
 }
 
 function analyzeMediaFolderFiles(files) {
   const artifactIdMap = buildArtifactIdMap();
+  const teacherScope = new Set((state.auth.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
+  const enforceTeacherScope = state.auth.role === 'teacher' && teacherScope.size > 0;
   const entries = [];
   const issues = {
     invalidFolder: 0,
     missingArtifact: 0,
-    unsupportedType: 0
+    unsupportedType: 0,
+    outOfScope: 0
   };
 
   files.forEach((file) => {
+    if (isIgnorableSystemFile(file)) {
+      return;
+    }
     const rel = String(file.webkitRelativePath || file.name || '');
     const folderName = getArtifactFolderNameFromRelativePath(rel);
     const ownerCandidate = parseOwnerIdFromFolder(folderName);
@@ -1605,9 +1642,13 @@ function analyzeMediaFolderFiles(files) {
       return;
     }
 
-    const ownerId = artifactIdMap.get(ownerCandidate);
-    if (!ownerId) {
+    const artifactMeta = artifactIdMap.get(ownerCandidate);
+    if (!artifactMeta) {
       issues.missingArtifact += 1;
+      return;
+    }
+    if (enforceTeacherScope && !teacherScope.has(artifactMeta.clubId)) {
+      issues.outOfScope += 1;
       return;
     }
 
@@ -1619,13 +1660,13 @@ function analyzeMediaFolderFiles(files) {
 
     entries.push({
       file,
-      ownerId,
+      ownerId: artifactMeta.artifactId,
       mediaType,
       baseName: getBaseName(file.name).toLowerCase()
     });
   });
 
-  const hasIssue = issues.invalidFolder || issues.missingArtifact || issues.unsupportedType;
+  const hasIssue = issues.invalidFolder || issues.missingArtifact || issues.unsupportedType || issues.outOfScope;
   return { entries, issues, ok: !hasIssue };
 }
 
@@ -1633,6 +1674,7 @@ function issueSummaryText(issues) {
   const chunks = [];
   if (issues.invalidFolder) chunks.push(`目录名不合规 ${issues.invalidFolder} 个文件`);
   if (issues.missingArtifact) chunks.push(`成果ID不存在 ${issues.missingArtifact} 个文件`);
+  if (issues.outOfScope) chunks.push(`超出当前教师可管理社团范围 ${issues.outOfScope} 个文件`);
   if (issues.unsupportedType) chunks.push(`不支持文件类型 ${issues.unsupportedType} 个文件`);
   return chunks.join('；');
 }
