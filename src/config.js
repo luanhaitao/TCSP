@@ -16,7 +16,10 @@ export const CONFIG = {
     provider: 'local',
     local: {
       apiUrl: '/api/upload',
-      maxSizeMb: 300
+      maxSizeMb: 300,
+      retryTimes: 2,
+      retryDelayMs: 400,
+      importConcurrency: 3
     },
     cloudinary: {
       cloudName: '',

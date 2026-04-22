@@ -8,6 +8,20 @@ function requireUploadEnabled() {
   return cfg;
 }
 
+function isRetryableUploadError(error) {
+  const msg = String(error?.message || '');
+  if (!msg) return false;
+  if (msg.includes('文件超过大小限制')) return false;
+  if (msg.includes('上传配置不完整')) return false;
+  if (msg.includes('暂不支持的上传服务')) return false;
+  if (msg.includes('HTTP 501')) return false;
+  return true;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function buildCloudinaryEndpoint(cloudName, mimeType = '') {
   const type = String(mimeType).toLowerCase();
   if (type.startsWith('image/')) return `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
@@ -136,14 +150,26 @@ async function uploadToCloudinary(file, cfg, extra) {
 export async function uploadLocalFile(file, extra = {}) {
   if (!file) throw new Error('请先选择本地文件。');
   const cfg = requireUploadEnabled();
+  const retryTimes = Math.max(0, Number(cfg?.local?.retryTimes ?? 2));
+  const retryDelayMs = Math.max(100, Number(cfg?.local?.retryDelayMs ?? 400));
 
-  if (cfg.provider === 'local') {
-    return uploadToLocal(file, cfg);
+  let lastError;
+  for (let attempt = 0; attempt <= retryTimes; attempt += 1) {
+    try {
+      if (cfg.provider === 'local') {
+        return await uploadToLocal(file, cfg);
+      }
+      if (cfg.provider === 'cloudinary') {
+        return await uploadToCloudinary(file, cfg, extra);
+      }
+      throw new Error(`暂不支持的上传服务：${cfg.provider}`);
+    } catch (error) {
+      lastError = error;
+      const canRetry = attempt < retryTimes && isRetryableUploadError(error);
+      if (!canRetry) break;
+      await sleep(retryDelayMs * (attempt + 1));
+    }
   }
 
-  if (cfg.provider === 'cloudinary') {
-    return uploadToCloudinary(file, cfg, extra);
-  }
-
-  throw new Error(`暂不支持的上传服务：${cfg.provider}`);
+  throw lastError;
 }

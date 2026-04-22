@@ -1734,6 +1734,30 @@ function pushMediaDraftRows(rows) {
   refreshSelectOptions();
 }
 
+async function runWithConcurrency(items, concurrency, worker) {
+  const queue = [...items];
+  const running = new Set();
+  const limit = Math.max(1, Number(concurrency || 1));
+
+  async function launchNext() {
+    if (!queue.length) return;
+    const item = queue.shift();
+    const p = Promise.resolve()
+      .then(() => worker(item))
+      .finally(() => {
+        running.delete(p);
+      });
+    running.add(p);
+    if (running.size >= limit) {
+      await Promise.race(running);
+    }
+    await launchNext();
+  }
+
+  await launchNext();
+  await Promise.all(running);
+}
+
 function mediaFolderFileKey(file) {
   const rel = String(file.webkitRelativePath || file.name || '');
   return `${rel}::${file.size}::${file.lastModified}`;
@@ -1802,6 +1826,7 @@ async function importMediaFromFolder() {
       success: 0,
       failedUpload: 0
     };
+    const importConcurrency = Math.max(1, Number(CONFIG?.assetUpload?.local?.importConcurrency ?? 3));
 
     let done = 0;
     const updateProgress = () => {
@@ -1809,7 +1834,7 @@ async function importMediaFromFolder() {
     };
     updateProgress();
 
-    for (const item of images) {
+    await runWithConcurrency(images, importConcurrency, async (item) => {
       try {
         const uploaded = await uploadLocalFile(item.file, { publicId: `media_${Date.now()}` });
         rowsToAppend.push({
@@ -1830,9 +1855,9 @@ async function importMediaFromFolder() {
         done += 1;
         updateProgress();
       }
-    }
+    });
 
-    for (const item of videos) {
+    await runWithConcurrency(videos, importConcurrency, async (item) => {
       try {
         const uploaded = await uploadLocalFile(item.file, { publicId: `media_${Date.now()}` });
         rowsToAppend.push({
@@ -1852,9 +1877,9 @@ async function importMediaFromFolder() {
         done += 1;
         updateProgress();
       }
-    }
+    });
 
-    for (const item of docs) {
+    await runWithConcurrency(docs, importConcurrency, async (item) => {
       try {
         const uploaded = await uploadLocalFile(item.file, { publicId: `media_${Date.now()}` });
         rowsToAppend.push({
@@ -1874,7 +1899,7 @@ async function importMediaFromFolder() {
         done += 1;
         updateProgress();
       }
-    }
+    });
 
     pushMediaDraftRows(rowsToAppend);
     const skipCount = stats.failedUpload;
