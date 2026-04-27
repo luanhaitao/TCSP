@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { uploadLocalFile } from './uploader.js';
+import { uploadHtmlFolder, uploadLocalFile } from './uploader.js';
 
 const STORAGE_KEY = 'tcsp_collector_drafts_v1';
 const AUTH_USER_KEY = 'tcsp_collector_auth_user_v1';
@@ -537,6 +537,20 @@ function isUrl(v) {
   }
 }
 
+function allowExternalHtmlUrl() {
+  return CONFIG.collector?.allowExternalHtmlUrl !== false;
+}
+
+function isValidMediaUrlByType(urlValue, mediaType) {
+  const text = String(urlValue || '').trim();
+  if (!text) return false;
+  if (mediaType === 'html') {
+    if (text.startsWith('/')) return true;
+    return allowExternalHtmlUrl() ? isUrl(text) : false;
+  }
+  return isUrl(text);
+}
+
 function isLocalUploadMode() {
   return Boolean(CONFIG.assetUpload?.enabled) && CONFIG.assetUpload?.provider === 'local';
 }
@@ -783,6 +797,7 @@ function loadDraftRowToForm(type, idx) {
     byId('thumbnail_url').value = row.thumbnail_url || '';
     byId('copyright_status').value = row.copyright_status || '';
     byId('notes').value = row.notes || '';
+    syncMediaTypeUi();
     state.editing.media = idx;
     setActiveTab('media');
     setStatus(`已载入素材草稿进行编辑：${row.media_id}`);
@@ -850,6 +865,7 @@ function formatTableCell(type, key, rawValue) {
     if (value === 'image') return '图片';
     if (value === 'video') return '视频';
     if (value === 'pdf') return '文档';
+    if (value === 'html') return '互动网页';
   }
   return value;
 }
@@ -1064,6 +1080,7 @@ function downloadArtifactTemplate() {
       { 项目: '多人示例', 说明: '学员姓名 = 张三、李四、王五' },
       { 项目: '小组示例', 说明: '学员姓名 = 未来创客队' },
       { 项目: '成果类型可选值', 说明: '仅可填写：作品、任务、探究、表达。' },
+      { 项目: '互动网页素材链接示例（在素材绑定中填写）', 说明: '可填 /uploads/xxx/index.html 或 https://example.com/demo' },
       { 项目: '所属社团字段填写规则', 说明: '优先填写“社团名称”；若存在同名社团，请填写社团ID（如 C001）。' },
       { 项目: '推荐写法', 说明: '所属社团 = 智能编程社' },
       { 项目: '重名写法', 说明: '所属社团 = C001' }
@@ -1184,7 +1201,7 @@ function bindSaves() {
     }
     if (!isUrl(row.cover_url)) {
       setActionStatus('clubSaveStatus', '社团信息保存失败：封面图链接不是有效地址。', true);
-      setStatus('社团信息保存失败：封面图链接不是有效的 http/https 地址', true);
+      setStatus('社团信息保存失败：封面图链接不是有效地址（支持 /uploads/... 或 http/https）', true);
       return;
     }
 
@@ -1271,6 +1288,11 @@ function bindSaves() {
     }
 
     if (!row.url) {
+      if (row.media_type === 'html') {
+        setActionStatus('mediaSaveStatus', '素材保存失败：互动网页请填写网页链接，不能通过本地上传自动生成。', true);
+        setStatus('素材保存失败：互动网页请填写可访问链接。', true);
+        return;
+      }
       const file = byId('media_file').files?.[0];
       if (file && CONFIG.assetUpload?.enabled) {
         setActionStatus('mediaSaveStatus', '未填写素材URL，正在自动上传本地文件...');
@@ -1293,9 +1315,12 @@ function bindSaves() {
       }
     }
 
-    if (!isUrl(row.url) || !isUrl(row.thumbnail_url)) {
-      setActionStatus('mediaSaveStatus', '素材保存失败：链接不是有效的 http/https 地址。', true);
-      setStatus('素材保存失败：链接不是有效的 http/https 地址', true);
+    if (!isValidMediaUrlByType(row.url, row.media_type) || !isUrl(row.thumbnail_url)) {
+      const htmlMsg = allowExternalHtmlUrl()
+        ? '素材保存失败：互动网页链接需为 /uploads/... 或 http/https 地址。'
+        : '素材保存失败：互动网页链接需为 /uploads/... 站内路径。';
+      setActionStatus('mediaSaveStatus', row.media_type === 'html' ? htmlMsg : '素材保存失败：链接不是有效地址。', true);
+      setStatus(row.media_type === 'html' ? htmlMsg : '素材保存失败：链接不是有效地址。', true);
       return;
     }
 
@@ -1347,6 +1372,8 @@ function bindClearActions() {
     byId('thumbnail_url').value = '';
     byId('copyright_status').value = '';
     byId('notes').value = '';
+    byId('media_type').value = 'image';
+    syncMediaTypeUi();
     state.editing.media = null;
     setStatus('素材表单已清空，可继续新增');
   });
@@ -1499,9 +1526,14 @@ async function uploadCoverFile() {
 
 async function uploadMediaFile() {
   const file = byId('media_file').files?.[0];
+  if ((byId('media_type')?.value || '') === 'html') {
+    setActionStatus('mediaUploadStatus', '互动网页不支持本地上传，请直接填写网页链接。', true);
+    setStatus('互动网页不支持本地上传，请直接填写网页链接。', true);
+    return;
+  }
   if (!file) {
     setActionStatus('mediaUploadStatus', '请先选择素材文件（图片、视频或PDF）。', true);
-    setStatus('请先选择素材文件（图片或视频）', true);
+    setStatus('请先选择素材文件（图片、视频或PDF）', true);
     return;
   }
   setActionStatus('mediaUploadStatus', '正在上传素材文件，请稍候...');
@@ -1511,6 +1543,7 @@ async function uploadMediaFile() {
       const result = await uploadLocalFile(file, { publicId: `media_${Date.now()}` });
       byId('media_url').value = result.url;
       byId('media_type').value = result.mediaType;
+      syncMediaTypeUi();
       if ((result.mediaType === 'image' || result.mediaType === 'video') && result.thumbnailUrl && !byId('thumbnail_url').value.trim()) {
         byId('thumbnail_url').value = result.thumbnailUrl;
       }
@@ -1584,6 +1617,7 @@ function setDefaults() {
   byId('artifact_type').value = '作品';
   byId('owner_type').value = 'artifact';
   byId('media_type').value = 'image';
+  syncMediaTypeUi();
 }
 
 function bindLoadButton() {
@@ -1700,11 +1734,22 @@ function buildArtifactIdMap() {
   return map;
 }
 
+function mediaRelativePathInsideArtifactFolder(file, folderName) {
+  const rel = String(file.webkitRelativePath || file.name || '');
+  const parts = rel.split('/').filter(Boolean);
+  const folderIndex = parts.findIndex((part) => part === folderName);
+  if (folderIndex >= 0) return parts.slice(folderIndex + 1).join('/');
+  if (parts.length <= 2) return parts.slice(1).join('/') || file.name;
+  return parts.slice(2).join('/') || file.name;
+}
+
 function analyzeMediaFolderFiles(files) {
   const artifactIdMap = buildArtifactIdMap();
   const teacherScope = new Set((state.auth.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
   const enforceTeacherScope = state.auth.role === 'teacher' && teacherScope.size > 0;
+  const groups = new Map();
   const entries = [];
+  const htmlFolders = [];
   const issues = {
     invalidFolder: 0,
     missingArtifact: 0,
@@ -1734,22 +1779,66 @@ function analyzeMediaFolderFiles(files) {
       return;
     }
 
+    const key = `${artifactMeta.artifactId}::${folderName}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        folderName,
+        ownerId: artifactMeta.artifactId,
+        clubId: artifactMeta.clubId,
+        files: [],
+        hasIndexHtml: false
+      });
+    }
+    const relInside = mediaRelativePathInsideArtifactFolder(file, folderName);
     const mediaType = detectMediaTypeFromFile(file);
-    if (!mediaType) {
-      issues.unsupportedType += 1;
+    const fileInfo = {
+      file,
+      relInside,
+      mediaType,
+      baseName: getBaseName(file.name).toLowerCase()
+    };
+    const group = groups.get(key);
+    group.files.push(fileInfo);
+    if (relInside === 'index.html') group.hasIndexHtml = true;
+  });
+
+  groups.forEach((group) => {
+    if (group.hasIndexHtml) {
+      htmlFolders.push({
+        ownerId: group.ownerId,
+        folderName: group.folderName,
+        files: group.files.map((item) => item.file)
+      });
+
+      group.files.forEach((item) => {
+        if (!item.mediaType) return;
+        if (item.relInside.includes('/')) return;
+        entries.push({
+          file: item.file,
+          ownerId: group.ownerId,
+          mediaType: item.mediaType,
+          baseName: item.baseName
+        });
+      });
       return;
     }
 
-    entries.push({
-      file,
-      ownerId: artifactMeta.artifactId,
-      mediaType,
-      baseName: getBaseName(file.name).toLowerCase()
+    group.files.forEach((item) => {
+      if (!item.mediaType) {
+        issues.unsupportedType += 1;
+        return;
+      }
+      entries.push({
+        file: item.file,
+        ownerId: group.ownerId,
+        mediaType: item.mediaType,
+        baseName: item.baseName
+      });
     });
   });
 
   const hasIssue = issues.invalidFolder || issues.missingArtifact || issues.unsupportedType || issues.outOfScope;
-  return { entries, issues, ok: !hasIssue };
+  return { entries, htmlFolders, issues, ok: !hasIssue };
 }
 
 function issueSummaryText(issues) {
@@ -1849,7 +1938,8 @@ async function importMediaFromFolder() {
 
   setActionStatus('mediaImportResult', '目录预检通过，正在导入并上传...');
   await setButtonBusy('importMediaFolderBtn', '正在导入...', async () => {
-    const total = analyzed.entries.length;
+    const htmlFolders = analyzed.htmlFolders || [];
+    const total = analyzed.entries.length + htmlFolders.length;
     const images = analyzed.entries.filter((e) => e.mediaType === 'image');
     const videos = analyzed.entries.filter((e) => e.mediaType === 'video');
     const docs = analyzed.entries.filter((e) => e.mediaType === 'pdf');
@@ -1865,7 +1955,10 @@ async function importMediaFromFolder() {
 
     let done = 0;
     const updateProgress = () => {
-      setActionStatus('mediaImportResult', `正在上传：${done}/${total}`);
+      setActionStatus(
+        'mediaImportResult',
+        `正在上传：${done}/${total}（图片 ${images.length}、视频 ${videos.length}、PDF ${docs.length}、互动网页 ${htmlFolders.length}）`
+      );
     };
     updateProgress();
 
@@ -1936,9 +2029,31 @@ async function importMediaFromFolder() {
       }
     });
 
+    await runWithConcurrency(htmlFolders, 1, async (item) => {
+      try {
+        const uploaded = await uploadHtmlFolder(item.files, { rootName: item.folderName });
+        rowsToAppend.push({
+          media_id: nextMediaId(),
+          owner_type: 'artifact',
+          owner_id: item.ownerId,
+          media_type: 'html',
+          url: uploaded.url,
+          thumbnail_url: '',
+          copyright_status: '',
+          notes: `目录导入：互动网页 ${item.folderName}`
+        });
+        stats.success += 1;
+      } catch {
+        stats.failedUpload += 1;
+      } finally {
+        done += 1;
+        updateProgress();
+      }
+    });
+
     pushMediaDraftRows(rowsToAppend);
     const skipCount = stats.failedUpload;
-    const summary = `导入完成：成功 ${stats.success} 条，跳过 ${skipCount} 条，上传失败 ${stats.failedUpload} 条。`;
+    const summary = `导入完成：成功 ${stats.success} 条，跳过 ${skipCount} 条，上传失败 ${stats.failedUpload} 条。本次识别：图片 ${images.length}、视频 ${videos.length}、PDF ${docs.length}、互动网页 ${htmlFolders.length}。`;
     setActionStatus('mediaImportResult', summary);
     setStatus(summary);
   });
@@ -1983,6 +2098,35 @@ function bindUploadActions() {
   }
 }
 
+function syncMediaTypeUi() {
+  const mediaType = byId('media_type')?.value || 'image';
+  const uploadBtn = byId('uploadMediaBtn');
+  const uploadStatus = byId('mediaUploadStatus');
+  const mediaUrl = byId('media_url');
+  const mediaUrlReq = byId('mediaUrlReq');
+  const thumb = byId('thumbnail_url');
+  if (!uploadBtn || !uploadStatus || !mediaUrl || !thumb || !mediaUrlReq) return;
+
+  if (mediaType === 'html') {
+    uploadBtn.disabled = true;
+    mediaUrlReq.textContent = '*';
+    mediaUrl.placeholder = allowExternalHtmlUrl()
+      ? 'https://example.com/demo 或 /uploads/.../index.html'
+      : '/uploads/.../index.html';
+    thumb.placeholder = '可选：网页封面图链接（https://... 或 /uploads/...）';
+    uploadStatus.textContent = allowExternalHtmlUrl()
+      ? '互动网页请直接填写可访问链接（支持内网路径和 http/https 外链）。'
+      : '互动网页请直接填写站内路径（如 /uploads/.../index.html）。';
+    return;
+  }
+
+  uploadBtn.disabled = !CONFIG.assetUpload?.enabled;
+  mediaUrlReq.textContent = isLocalUploadMode() ? '' : '*';
+  mediaUrl.placeholder = '可留空：选本地文件后系统会自动上传并填入';
+  thumb.placeholder = 'https://... 或 /uploads/.../cover.jpg';
+  uploadStatus.textContent = '上传后会自动填入“素材URL”和素材类型。';
+}
+
 function tuneMediaUrlFieldByMode() {
   const req = byId('mediaUrlReq');
   const input = byId('media_url');
@@ -2002,6 +2146,12 @@ function bindPublishAction() {
   }
 }
 
+function bindMediaTypeChange() {
+  const el = byId('media_type');
+  if (!el) return;
+  el.addEventListener('change', syncMediaTypeUi);
+}
+
 function init() {
   bindAuthActions();
   bindTabs();
@@ -2017,8 +2167,10 @@ function init() {
   bindArtifactFolderExportAction();
   bindMediaFolderImportActions();
   bindUploadActions();
+  bindMediaTypeChange();
   bindPublishAction();
   tuneMediaUrlFieldByMode();
+  syncMediaTypeUi();
   setDefaults();
   renderDrafts();
   byId('updated_at').value = nowText();

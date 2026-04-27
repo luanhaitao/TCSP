@@ -1,7 +1,7 @@
 import { readText, parseCsv, isAssetUrl } from './shared_csv.mjs';
 
 const TYPES = new Set(['作品', '任务', '探究', '表达']);
-const MEDIA_TYPES = new Set(['image', 'video', 'pdf']);
+const MEDIA_TYPES = new Set(['image', 'video', 'pdf', 'html']);
 
 function required(row, key) {
   return String(row[key] ?? '').trim().length > 0;

@@ -11,11 +11,15 @@ export const CONFIG = {
     enabled: true,
     adminNames: ['科技组管理员']
   },
+  collector: {
+    allowExternalHtmlUrl: true
+  },
   assetUpload: {
     enabled: true,
     provider: 'local',
     local: {
       apiUrl: '/api/upload',
+      htmlFolderApiUrl: '/api/upload-html-folder',
       maxSizeMb: 300,
       retryTimes: 2,
       retryDelayMs: 400,

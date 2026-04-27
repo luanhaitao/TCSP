@@ -1,7 +1,7 @@
 import { isAssetUrl } from './utils.js';
 
 const TYPES = new Set(['作品', '任务', '探究', '表达']);
-const MEDIA_TYPES = new Set(['image', 'video', 'pdf']);
+const MEDIA_TYPES = new Set(['image', 'video', 'pdf', 'html']);
 
 function required(row, key) {
   return String(row[key] ?? '').trim().length > 0;
@@ -58,7 +58,7 @@ export function validateData({ clubs, artifacts, media }, maxTextLength = 140) {
       issues.push(`${rowTag}: owner_id 对应成果不存在 (${item.owner_id})`);
     }
     if (!MEDIA_TYPES.has(item.media_type)) {
-      issues.push(`${rowTag}: media_type 必须是 image / video / pdf`);
+      issues.push(`${rowTag}: media_type 必须是 image / video / pdf / html`);
     }
     if (!isAssetUrl(item.url)) {
       issues.push(`${rowTag}: url 不是有效链接`);

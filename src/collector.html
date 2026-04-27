@@ -169,6 +169,7 @@
           <h3>目录命名规则（请严格按此命名）</h3>
           <p><strong>格式：</strong><code>成果ID_成果名称</code>，例如 <code>A001_智能红绿灯</code></p>
           <p><strong>支持后缀：</strong>图片 <code>jpg/png/gif/webp</code>；视频 <code>mp4/mov/webm</code>；文档 <code>pdf</code></p>
+          <p><strong>互动网页：</strong>成果目录内必须包含 <code>index.html</code>，系统会整体上传网页目录。</p>
           <p class="small">系统会从目录名前缀自动识别成果ID并绑定到对应成果。</p>
         </article>
         <details>
@@ -181,7 +182,12 @@
   A002_水生态观察/
     result1.png
   A003_图文报告展示/
-    report.pdf</pre>
+    report.pdf
+  A004_互动编程展示/
+    index.html
+    css/style.css
+    js/app.js
+    assets/demo.png</pre>
         </details>
         <p id="mediaImportResult" class="action-status">可选择素材根目录后开始一键导入。</p>
         <div class="grid">
@@ -205,11 +211,12 @@
               <option value="image">图片</option>
               <option value="video">视频</option>
               <option value="pdf">文档</option>
+              <option value="html">互动网页</option>
             </select>
           </label>
-          <label>素材URL <span id="mediaUrlReq" class="req">*</span><input id="media_url" placeholder="https://..." /></label>
+          <label>素材URL <span id="mediaUrlReq" class="req">*</span><input id="media_url" placeholder="https://... 或 /uploads/.../index.html" /></label>
           <div class="full-row">
-            <label>本地素材上传（图片/视频）
+            <label>本地素材上传（图片/视频/PDF）
               <div class="inline upload-inline">
                 <input id="media_file" type="file" accept="image/*,video/*,.pdf,application/pdf" />
                 <button id="uploadMediaBtn" type="button">上传并填入素材链接</button>
@@ -217,7 +224,7 @@
             </label>
             <p id="mediaUploadStatus" class="action-status">上传后会自动填入“素材URL”和素材类型。</p>
           </div>
-          <label>视频缩略图URL<input id="thumbnail_url" placeholder="https://..." /></label>
+          <label>封面图URL（视频/网页可选）<input id="thumbnail_url" placeholder="https://... 或 /uploads/.../cover.jpg" /></label>
           <label>版权状态<input id="copyright_status" placeholder="例如 学校授权" /></label>
           <label>备注<input id="notes" placeholder="例如 成果截图" /></label>
         </div>
@@ -257,7 +264,8 @@
         <ul>
           <li>小组成果可在“学员姓名”中填写多人姓名或小组名；素材只需绑定成果ID。</li>
           <li>成果类型只能选：作品、任务、探究、表达。</li>
-          <li>链接必须是 `http://` 或 `https://` 开头并可公开访问。</li>
+          <li>链接支持 `http://`、`https://`，也支持站内相对路径（如 `/uploads/...`）。</li>
+          <li>“互动网页”素材请直接填写网页链接；详情页会以内嵌方式展示，并可新窗口打开。</li>
           <li>新增成果后，通常还需要新增至少 1 条素材绑定。</li>
         </ul>
       </section>

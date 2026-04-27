@@ -16,6 +16,7 @@ const UPLOADS_DIR = path.resolve(process.env.TCSP_UPLOADS_DIR || path.join(ROOT,
 const BACKUP_DIR = path.resolve(process.env.TCSP_BACKUP_DIR || path.join(ROOT, 'backup'));
 const SESSION_COOKIE = 'tcsp_sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const ALLOW_EXTERNAL_HTML_URL = process.env.TCSP_ALLOW_EXTERNAL_HTML_URL !== 'false';
 const sessions = new Map();
 
 const CLUB_HEADERS = [
@@ -103,6 +104,43 @@ function sanitizeRows(rows, headers) {
     for (const h of headers) out[h] = String(row[h] ?? '').trim();
     return out;
   });
+}
+
+function isHttpUrl(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedMediaUrl(raw, mediaType) {
+  const text = String(raw || '').trim();
+  if (!text) return false;
+  if (text.startsWith('/')) return true;
+  if (mediaType === 'html' && !ALLOW_EXTERNAL_HTML_URL) return false;
+  return isHttpUrl(text);
+}
+
+function validateIncomingMediaRows(rows) {
+  const issues = [];
+  const allowedTypes = new Set(['image', 'video', 'pdf', 'html']);
+  rows.forEach((row, idx) => {
+    const rowTag = `media#${idx + 1}`;
+    const mediaType = String(row.media_type || '').trim();
+    if (!String(row.media_id || '').trim()) issues.push(`${rowTag} 缺少 media_id`);
+    const ownerType = String(row.owner_type || '').trim();
+    if (!ownerType) issues.push(`${rowTag} 缺少 owner_type`);
+    if (ownerType && ownerType !== 'club' && ownerType !== 'artifact') issues.push(`${rowTag} owner_type 非法`);
+    if (!String(row.owner_id || '').trim()) issues.push(`${rowTag} 缺少 owner_id`);
+    if (!allowedTypes.has(mediaType)) issues.push(`${rowTag} media_type 非法`);
+    if (!isAllowedMediaUrl(row.url, mediaType)) issues.push(`${rowTag} url 非法`);
+    if (String(row.thumbnail_url || '').trim() && !isAllowedMediaUrl(row.thumbnail_url, 'image')) {
+      issues.push(`${rowTag} thumbnail_url 非法`);
+    }
+  });
+  return issues;
 }
 
 function upsertById(existingRows, incomingRows, idKey, headers) {
@@ -345,6 +383,21 @@ async function backupUploadedFile(targetPath, dateDir, targetName, meta) {
   return backupPath;
 }
 
+async function backupUploadedDirectory(sourceDir, dateDir, dirName, meta) {
+  const backupUploadDir = path.join(BACKUP_DIR, 'uploads', dateDir);
+  await fs.mkdir(backupUploadDir, { recursive: true });
+  const backupPath = path.join(backupUploadDir, dirName);
+  await fs.cp(sourceDir, backupPath, { recursive: true });
+  const logPath = path.join(BACKUP_DIR, 'uploads', 'upload_log.jsonl');
+  await appendJsonLine(logPath, {
+    backed_up_at: new Date().toISOString(),
+    source_path: sourceDir,
+    backup_path: backupPath,
+    ...meta
+  });
+  return backupPath;
+}
+
 function json(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -434,6 +487,7 @@ function handleTemplateDownload(req, res, pathname) {
       { 项目: '多人示例', 说明: '学员姓名 = 张三、李四、王五' },
       { 项目: '小组示例', 说明: '学员姓名 = 未来创客队' },
       { 项目: '成果类型可选值', 说明: '仅可填写：作品、任务、探究、表达。' },
+      { 项目: '互动网页素材链接示例（在素材绑定中填写）', 说明: '可填 /uploads/xxx/index.html 或 https://example.com/demo' },
       { 项目: '所属社团字段填写规则', 说明: '优先填写“社团名称”；若存在同名社团，请填写社团ID（如 C001）。' },
       { 项目: '推荐写法', 说明: '所属社团 = 智能编程社' },
       { 项目: '重名写法', 说明: '所属社团 = C001' }
@@ -543,6 +597,29 @@ function detectMediaType(filename, mime) {
   if (m.startsWith('video/') || videoExt.has(ext)) return 'video';
   if (m === 'application/pdf' || pdfExt.has(ext)) return 'pdf';
   return '';
+}
+
+function normalizeUploadedRelativePath(filename) {
+  const raw = String(filename || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const parts = raw.split('/').filter(Boolean);
+  if (!parts.length) throw new Error('文件路径为空。');
+
+  return parts.map((part) => {
+    const normalized = part.normalize('NFC');
+    if (normalized === '.' || normalized === '..' || normalized.includes('\0')) {
+      throw new Error('文件路径包含不安全片段。');
+    }
+    const safe = normalized.replace(/[\x00-\x1f\x7f<>:"|?*]/g, '_').trim();
+    if (!safe || safe === '.' || safe === '..') {
+      throw new Error('文件路径包含无效名称。');
+    }
+    return safe;
+  }).join('/');
+}
+
+function isPathInside(parent, child) {
+  const rel = path.relative(parent, child);
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
 async function runCommand(cmd, args) {
@@ -688,6 +765,85 @@ async function handleUpload(req, res) {
   }
 }
 
+async function handleUploadHtmlFolder(req, res) {
+  try {
+    const session = getSession(req);
+    if (!session) return unauthorized(res);
+    await ensureRuntimeDirs();
+    const contentType = req.headers['content-type'] || '';
+    const match = String(contentType).match(/multipart\/form-data;\s*boundary=(.+)$/i);
+    if (!match) {
+      return json(res, 400, { ok: false, message: '上传失败：请求格式应为 multipart/form-data。' });
+    }
+
+    const boundary = match[1].replace(/^"|"$/g, '');
+    const body = await collectRawBody(req, MAX_UPLOAD_BYTES);
+    const fileParts = splitMultipart(body, boundary)
+      .map(parsePart)
+      .filter((part) => part?.fieldName === 'file' && part.filename);
+
+    if (!fileParts.length) {
+      return json(res, 400, { ok: false, message: '互动网页上传失败：未找到目录文件。' });
+    }
+
+    const safeParts = [];
+    let hasIndex = false;
+    let totalBytes = 0;
+    for (const part of fileParts) {
+      const relPath = normalizeUploadedRelativePath(part.filename);
+      if (relPath === 'index.html') hasIndex = true;
+      safeParts.push({ ...part, relPath });
+      totalBytes += part.content.length;
+    }
+
+    if (!hasIndex) {
+      return json(res, 400, { ok: false, message: '互动网页上传失败：目录根部必须包含 index.html。' });
+    }
+
+    const now = new Date();
+    const dateDir = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const uploadDir = path.join(UPLOADS_DIR, dateDir);
+    const dirName = `html_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const htmlDir = path.join(uploadDir, dirName);
+    await fs.mkdir(htmlDir, { recursive: true });
+
+    for (const part of safeParts) {
+      const targetPath = path.resolve(htmlDir, part.relPath);
+      if (!isPathInside(htmlDir, targetPath)) {
+        return json(res, 400, { ok: false, message: '互动网页上传失败：文件路径越界，已拦截。' });
+      }
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.writeFile(targetPath, part.content);
+    }
+
+    const backupPath = await backupUploadedDirectory(htmlDir, dateDir, dirName, {
+      media_type: 'html',
+      entry: 'index.html',
+      bytes: totalBytes,
+      file_count: safeParts.length
+    });
+
+    const relUrl = `/uploads/${dateDir}/${dirName}/index.html`;
+    const host = req.headers.host || `localhost:${PORT}`;
+    const absoluteUrl = `http://${host}${relUrl}`;
+
+    return json(res, 200, {
+      ok: true,
+      message: '互动网页目录上传成功',
+      url: relUrl,
+      relativeUrl: relUrl,
+      absoluteUrl,
+      mediaType: 'html',
+      entry: 'index.html',
+      bytes: totalBytes,
+      fileCount: safeParts.length,
+      backupPath: path.relative(ROOT, backupPath)
+    });
+  } catch (error) {
+    return json(res, 500, { ok: false, message: `互动网页上传失败：${error.message}` });
+  }
+}
+
 async function handlePublish(req, res) {
   try {
     const session = getSession(req);
@@ -718,6 +874,14 @@ async function handlePublish(req, res) {
     if (!scoped.clubs.length && !scoped.artifacts.length && !scoped.media.length) {
       const blockedTotal = scoped.blocked.clubs + scoped.blocked.artifacts + scoped.blocked.media;
       return forbidden(res, blockedTotal > 0 ? `发布失败：无可发布数据，已拦截 ${blockedTotal} 条越权草稿。` : '发布失败：当前账号无可发布数据。');
+    }
+    const mediaIssues = validateIncomingMediaRows(scoped.media);
+    if (mediaIssues.length) {
+      const firstFew = mediaIssues.slice(0, 3).join('；');
+      return json(res, 400, {
+        ok: false,
+        message: `发布失败：素材数据校验未通过（${mediaIssues.length}项）。${firstFew}${mediaIssues.length > 3 ? '；...' : ''}`
+      });
     }
 
     const backupDir = await backupBeforeWrite();
@@ -1110,6 +1274,10 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/upload' && req.method === 'POST') {
     return handleUpload(req, res);
+  }
+
+  if (pathname === '/api/upload-html-folder' && req.method === 'POST') {
+    return handleUploadHtmlFolder(req, res);
   }
 
   if (pathname === '/api/publish' && req.method === 'POST') {

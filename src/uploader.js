@@ -98,6 +98,60 @@ async function uploadToLocal(file, cfg) {
   };
 }
 
+function htmlFolderRelativePath(file, rootName = '') {
+  const raw = String(file.webkitRelativePath || file.name || '');
+  const parts = raw.split('/').filter(Boolean);
+  const rootIndex = rootName ? parts.findIndex((part) => part === rootName) : -1;
+  const relParts = rootIndex >= 0 ? parts.slice(rootIndex + 1) : parts.slice(-1);
+  return relParts.join('/') || file.name || 'index.html';
+}
+
+async function uploadHtmlFolderToLocal(files, cfg, extra = {}) {
+  const endpoint = cfg.local?.htmlFolderApiUrl || '/api/upload-html-folder';
+  const maxSizeMb = Number(cfg.local?.maxSizeMb || 300);
+  const maxBytes = maxSizeMb * 1024 * 1024;
+  const fileList = Array.from(files || []);
+  const totalBytes = fileList.reduce((sum, file) => sum + Number(file.size || 0), 0);
+
+  if (!fileList.length) {
+    throw new Error('上传失败：未找到互动网页目录文件。');
+  }
+  if (totalBytes > maxBytes) {
+    throw new Error(`上传失败：网页目录超过大小限制（${maxSizeMb}MB）。`);
+  }
+
+  const formData = new FormData();
+  fileList.forEach((file) => {
+    formData.append('file', file, htmlFolderRelativePath(file, extra.rootName));
+  });
+
+  let resp;
+  try {
+    resp = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      body: formData
+    }, 120000);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('上传超时：互动网页文件较多，请检查局域网连接后重试。');
+    }
+    throw new Error('上传失败：无法连接互动网页目录上传服务，请确认一体化服务已启动。');
+  }
+
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || !json.ok) {
+    throw new Error(json?.message || `上传失败：HTTP ${resp.status}`);
+  }
+
+  return {
+    url: json.url,
+    mediaType: json.mediaType || 'html',
+    originalFilename: json.entry || 'index.html',
+    bytes: json.bytes || totalBytes,
+    fileCount: json.fileCount || fileList.length
+  };
+}
+
 async function uploadToCloudinary(file, cfg, extra) {
   const cloudName = cfg.cloudinary?.cloudName?.trim();
   const uploadPreset = cfg.cloudinary?.uploadPreset?.trim();
@@ -172,4 +226,12 @@ export async function uploadLocalFile(file, extra = {}) {
   }
 
   throw lastError;
+}
+
+export async function uploadHtmlFolder(files, extra = {}) {
+  const cfg = requireUploadEnabled();
+  if (cfg.provider !== 'local') {
+    throw new Error('互动网页目录上传目前仅支持本地服务器存储。');
+  }
+  return uploadHtmlFolderToLocal(files, cfg, extra);
 }

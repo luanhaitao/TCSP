@@ -176,6 +176,12 @@ function artifactCardMedia(artifact) {
   const medias = getMediaForArtifact(artifact.artifact_id);
   const first = medias[0];
   if (!first) return { kind: 'empty', src: '' };
+  if (first.media_type === 'html') {
+    if (first.thumbnail_url && isAssetUrl(first.thumbnail_url)) return { kind: 'image', src: first.thumbnail_url };
+    const nonGifImage = medias.find((m) => isNonGifImageMedia(m));
+    if (nonGifImage) return { kind: 'image', src: nonGifImage.url };
+    return { kind: 'html', src: first.url || '' };
+  }
   if (first.media_type === 'video') {
     if (first.thumbnail_url && isAssetUrl(first.thumbnail_url)) return { kind: 'image', src: first.thumbnail_url };
     const nonGifImage = medias.find((m) => isNonGifImageMedia(m));
@@ -204,6 +210,9 @@ function renderArtifactCover(artifact) {
   }
   if (media.kind === 'pdf') {
     return '<div class="artifact-cover artifact-cover-pdf"><span>PDF成果</span></div>';
+  }
+  if (media.kind === 'html') {
+    return '<div class="artifact-cover artifact-cover-html"><span>网页成果</span></div>';
   }
   if (media.kind === 'video') {
     const video = getMediaForArtifact(artifact.artifact_id).find((m) => m.media_type === 'video' && isAssetUrl(m.url));
@@ -311,6 +320,25 @@ function openDetail(artifactId) {
             </object>
           </div>
           <p><a class="btn btn-light" href="${media.url}" target="_blank" rel="noreferrer">打开成果PDF</a></p>
+        `;
+      }
+      if (media.media_type === 'html') {
+        if (!isAssetUrl(media.url)) {
+          return '<p class="warning">网页链接无效，已隐藏预览。</p>';
+        }
+        return `
+          <div class="html-preview-wrap">
+            <iframe
+              src="${escAttr(media.url)}"
+              class="html-preview"
+              title="${escAttr(item.artifact_name)} 互动网页"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+              sandbox="allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups"
+            ></iframe>
+          </div>
+          <p class="muted">若页面因目标站点限制而无法内嵌显示，请使用下方按钮在新窗口打开。</p>
+          <p><a class="btn btn-light" href="${escAttr(media.url)}" target="_blank" rel="noreferrer">在新窗口打开网页成果</a></p>
         `;
       }
       if (!isAssetUrl(media.url)) {

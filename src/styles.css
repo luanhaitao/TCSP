@@ -280,6 +280,11 @@ select {
   color: #134b86;
 }
 
+.artifact-cover-html {
+  background: linear-gradient(135deg, #e3f8ff, #c9eeff);
+  color: #0b5670;
+}
+
 .artifact-cover-empty {
   background: #eef4fa;
   color: #4f6682;
@@ -312,6 +317,18 @@ select {
 .pdf-preview {
   width: 100%;
   height: min(62vh, 560px);
+  border: 1px solid #d8e9f9;
+  border-radius: 10px;
+  background: #f9fcff;
+}
+
+.html-preview-wrap {
+  margin-top: 8px;
+}
+
+.html-preview {
+  width: 100%;
+  height: min(68vh, 620px);
   border: 1px solid #d8e9f9;
   border-radius: 10px;
   background: #f9fcff;
