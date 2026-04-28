@@ -1,10 +1,13 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import url from 'node:url';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { pipeline } from 'node:stream/promises';
+import { ZipFile } from 'yazl';
 import { parseCsv } from './shared_csv.mjs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -1251,17 +1254,6 @@ async function resolveArtifactFolderExportArtifacts(session, incomingArtifacts =
   );
 }
 
-async function runCommandCapture(cmd, args, options = {}) {
-  await new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'ignore', ...options });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${cmd} exited with code ${code}`));
-    });
-  });
-}
-
 async function cleanupGeneratedDownloads(downloadDir) {
   if (!(await pathExists(downloadDir))) return;
   const entries = await fs.readdir(downloadDir, { withFileTypes: true });
@@ -1278,69 +1270,45 @@ async function cleanupGeneratedDownloads(downloadDir) {
   }));
 }
 
+async function writeYazlZip(zipPath, rootDirName, artifacts) {
+  const zip = new ZipFile();
+  const output = createWriteStream(zipPath);
+  const writePromise = pipeline(zip.outputStream, output);
+  const note = [
+    '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
+    '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
+    ''
+  ].join('\n');
+
+  for (const row of artifacts) {
+    const artifactId = String(row.artifact_id || '').trim();
+    if (!artifactId) continue;
+    const artifactName = safeFolderPart(row.artifact_name || '');
+    const entryPath = `${rootDirName}/${artifactId}_${artifactName}/请将素材放在此目录.txt`;
+    zip.addBuffer(Buffer.from(note, 'utf8'), entryPath);
+  }
+
+  zip.end();
+  await writePromise;
+}
+
 async function createArtifactFoldersZipFile(artifacts) {
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
   const rootDirName = `artifact_folders_template_${stamp}`;
   const zipFilename = `artifact_folders_template_${stamp}_${crypto.randomBytes(4).toString('hex')}.zip`;
   const downloadDir = path.join(UPLOADS_DIR, 'generated-downloads');
   const zipPath = path.join(downloadDir, zipFilename);
-  const tempBase = await fs.mkdtemp(path.join(os.tmpdir(), 'tcsp-artifact-folder-zip-'));
-  const exportRoot = path.join(tempBase, rootDirName);
 
-  try {
-    await fs.mkdir(downloadDir, { recursive: true });
-    await cleanupGeneratedDownloads(downloadDir);
-    await fs.mkdir(exportRoot, { recursive: true });
-    for (const row of artifacts) {
-      const artifactId = String(row.artifact_id || '').trim();
-      if (!artifactId) continue;
-      const artifactName = safeFolderPart(row.artifact_name || '');
-      const folderPath = path.join(exportRoot, `${artifactId}_${artifactName}`);
-      await fs.mkdir(folderPath, { recursive: true });
-      await fs.writeFile(
-        path.join(folderPath, '请将素材放在此目录.txt'),
-        [
-          '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
-          '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
-          ''
-        ].join('\n'),
-        'utf8'
-      );
-    }
+  await fs.mkdir(downloadDir, { recursive: true });
+  await cleanupGeneratedDownloads(downloadDir);
+  await writeYazlZip(zipPath, rootDirName, artifacts);
 
-    try {
-      await runCommandCapture('ditto', ['-c', '-k', '--norsrc', '--keepParent', exportRoot, zipPath]);
-    } catch {
-      const zipEntries = [];
-      for (const row of artifacts) {
-        const artifactId = String(row.artifact_id || '').trim();
-        if (!artifactId) continue;
-        const artifactName = safeFolderPart(row.artifact_name || '');
-        const basePath = `${rootDirName}/${artifactId}_${artifactName}/`;
-        zipEntries.push({
-          name: `${basePath}请将素材放在此目录.txt`,
-          data: Buffer.from(
-            [
-              '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
-              '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
-              ''
-            ].join('\n'),
-            'utf8'
-          )
-        });
-      }
-      await fs.writeFile(zipPath, makeZipArchive(zipEntries));
-    }
-
-    return {
-      fileName: zipFilename,
-      path: zipPath,
-      url: `/uploads/generated-downloads/${encodeURIComponent(zipFilename)}`,
-      count: artifacts.length
-    };
-  } finally {
-    await fs.rm(tempBase, { recursive: true, force: true });
-  }
+  return {
+    fileName: zipFilename,
+    path: zipPath,
+    url: `/uploads/generated-downloads/${encodeURIComponent(zipFilename)}`,
+    count: artifacts.length
+  };
 }
 
 async function parseArtifactFolderExportBody(req) {
@@ -1409,35 +1377,15 @@ async function handleArtifactFoldersExport(req, res) {
   }
 
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-  const rootDirName = `artifact_folders_template_${stamp}`;
 
   try {
-    const zipEntries = [];
-    for (const row of artifacts) {
-      const artifactId = String(row.artifact_id || '').trim();
-      if (!artifactId) continue;
-      const artifactName = safeFolderPart(row.artifact_name || '');
-      const folderName = `${artifactId}_${artifactName}`;
-      const basePath = `${rootDirName}/${folderName}/`;
-      zipEntries.push({
-        name: `${basePath}请将素材放在此目录.txt`,
-        data: Buffer.from(
-          [
-            '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
-            '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
-            ''
-          ].join('\n'),
-          'utf8'
-        )
-      });
-    }
-
-    const zipFilename = `artifact_folders_template_${stamp}.zip`;
-    const zipBuffer = makeZipArchive(zipEntries);
+    const zip = await createArtifactFoldersZipFile(artifacts);
+    const zipBuffer = await fs.readFile(zip.path);
+    const downloadName = `artifact_folders_template_${stamp}.zip`;
 
     res.writeHead(200, {
       'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${zipFilename}"; filename*=UTF-8''${encodeURIComponent(zipFilename)}`,
+      'Content-Disposition': `attachment; filename="${downloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
       'Cache-Control': 'no-store',
       'Content-Length': zipBuffer.length,
       'X-Artifact-Folder-Count': String(artifacts.length),

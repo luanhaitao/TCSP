@@ -11,5 +11,8 @@
     "migrate:export": "node scripts/migrate_export.mjs",
     "migrate:import": "node scripts/migrate_import.mjs",
     "restore:admin-backup": "node scripts/restore_admin_backup.mjs"
+  },
+  "dependencies": {
+    "yazl": "^3.3.1"
   }
 }
