@@ -18,6 +18,7 @@ const SESSION_COOKIE = 'tcsp_sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
 const ALLOW_EXTERNAL_HTML_URL = process.env.TCSP_ALLOW_EXTERNAL_HTML_URL !== 'false';
 const sessions = new Map();
+const artifactFolderExportJobs = new Map();
 
 const CLUB_HEADERS = [
   'club_id', 'club_name', 'teacher', 'grade_range', 'student_count', 'club_category', 'intro',
@@ -251,6 +252,13 @@ function getSession(req) {
   }
   session.expiresAt = Date.now() + SESSION_TTL_MS;
   return { sid, ...session };
+}
+
+function cleanupArtifactFolderExportJobs() {
+  const now = Date.now();
+  for (const [token, job] of artifactFolderExportJobs.entries()) {
+    if (!job || job.expiresAt <= now) artifactFolderExportJobs.delete(token);
+  }
 }
 
 async function getAdminNames() {
@@ -1247,6 +1255,33 @@ async function parseArtifactFolderExportBody(req) {
   return {};
 }
 
+async function handleArtifactFoldersPrepare(req, res) {
+  const session = getSession(req);
+  if (!session) return unauthorized(res);
+
+  try {
+    const body = await parseJsonBody(req);
+    const artifacts = Array.isArray(body?.artifacts) ? sanitizeRows(body.artifacts, ARTIFACT_HEADERS) : [];
+    if (!artifacts.length) {
+      return json(res, 400, { ok: false, message: '当前权限范围内暂无成果，无法导出目录结构。' });
+    }
+    cleanupArtifactFolderExportJobs();
+    const token = crypto.randomBytes(16).toString('hex');
+    artifactFolderExportJobs.set(token, {
+      sid: session.sid,
+      artifacts,
+      expiresAt: Date.now() + 5 * 60 * 1000
+    });
+    return json(res, 200, {
+      ok: true,
+      downloadUrl: `/api/artifact-folders/export?token=${token}`,
+      count: artifacts.length
+    });
+  } catch (error) {
+    return json(res, 400, { ok: false, message: `导出目录结构准备失败：${error.message}` });
+  }
+}
+
 async function handleArtifactFoldersExport(req, res) {
   const session = getSession(req);
   if (!session) return unauthorized(res);
@@ -1254,7 +1289,16 @@ async function handleArtifactFoldersExport(req, res) {
   const base = await loadAllBaseTables();
   const scoped = isAdminSession(session) ? base : filterBaseByScope(base, session.clubIds || []);
   let incomingArtifacts = [];
-  if (req.method === 'POST') {
+  const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const token = requestUrl.searchParams.get('token') || '';
+  if (req.method === 'GET' && token) {
+    cleanupArtifactFolderExportJobs();
+    const job = artifactFolderExportJobs.get(token);
+    if (!job || job.sid !== session.sid) {
+      return json(res, 404, { ok: false, message: '下载链接已失效，请重新点击导出。' });
+    }
+    incomingArtifacts = sanitizeRows(job.artifacts || [], ARTIFACT_HEADERS);
+  } else if (req.method === 'POST') {
     try {
       const body = await parseArtifactFolderExportBody(req);
       if (Array.isArray(body?.artifacts)) incomingArtifacts = sanitizeRows(body.artifacts, ARTIFACT_HEADERS);
@@ -1398,6 +1442,10 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/admin/backup' && req.method === 'POST') {
     return handleAdminBackup(req, res);
+  }
+
+  if (pathname === '/api/artifact-folders/prepare' && req.method === 'POST') {
+    return handleArtifactFoldersPrepare(req, res);
   }
 
   if (pathname === '/api/artifact-folders/export' && (req.method === 'GET' || req.method === 'POST')) {
