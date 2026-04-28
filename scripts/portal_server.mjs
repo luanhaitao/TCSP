@@ -53,6 +53,7 @@ const MIME = {
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
   '.pdf': 'application/pdf',
+  '.zip': 'application/zip',
   '.mp4': 'video/mp4',
   '.mov': 'video/quicktime',
   '.webm': 'video/webm'
@@ -1238,6 +1239,110 @@ function dedupeArtifactsForFolderExport(artifacts) {
   return order.map((id) => map.get(id)).filter(Boolean);
 }
 
+async function resolveArtifactFolderExportArtifacts(session, incomingArtifacts = []) {
+  const base = await loadAllBaseTables();
+  const scoped = isAdminSession(session) ? base : filterBaseByScope(base, session.clubIds || []);
+  const scopeClubIds = new Set((session.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
+  const candidates = incomingArtifacts.length ? incomingArtifacts : sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS);
+  return dedupeArtifactsForFolderExport(
+    isAdminSession(session)
+      ? candidates
+      : candidates.filter((row) => scopeClubIds.has(String(row.club_id || '').trim()))
+  );
+}
+
+async function runCommandCapture(cmd, args, options = {}) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'ignore', ...options });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} exited with code ${code}`));
+    });
+  });
+}
+
+async function cleanupGeneratedDownloads(downloadDir) {
+  if (!(await pathExists(downloadDir))) return;
+  const entries = await fs.readdir(downloadDir, { withFileTypes: true });
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  await Promise.all(entries.map(async (entry) => {
+    if (!entry.isFile() || !entry.name.endsWith('.zip')) return;
+    const full = path.join(downloadDir, entry.name);
+    try {
+      const stat = await fs.stat(full);
+      if (stat.mtimeMs < cutoff) await fs.rm(full, { force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  }));
+}
+
+async function createArtifactFoldersZipFile(artifacts) {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const rootDirName = `artifact_folders_template_${stamp}`;
+  const zipFilename = `artifact_folders_template_${stamp}_${crypto.randomBytes(4).toString('hex')}.zip`;
+  const downloadDir = path.join(UPLOADS_DIR, 'generated-downloads');
+  const zipPath = path.join(downloadDir, zipFilename);
+  const tempBase = await fs.mkdtemp(path.join(os.tmpdir(), 'tcsp-artifact-folder-zip-'));
+  const exportRoot = path.join(tempBase, rootDirName);
+
+  try {
+    await fs.mkdir(downloadDir, { recursive: true });
+    await cleanupGeneratedDownloads(downloadDir);
+    await fs.mkdir(exportRoot, { recursive: true });
+    for (const row of artifacts) {
+      const artifactId = String(row.artifact_id || '').trim();
+      if (!artifactId) continue;
+      const artifactName = safeFolderPart(row.artifact_name || '');
+      const folderPath = path.join(exportRoot, `${artifactId}_${artifactName}`);
+      await fs.mkdir(folderPath, { recursive: true });
+      await fs.writeFile(
+        path.join(folderPath, '请将素材放在此目录.txt'),
+        [
+          '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
+          '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
+          ''
+        ].join('\n'),
+        'utf8'
+      );
+    }
+
+    try {
+      await runCommandCapture('ditto', ['-c', '-k', '--norsrc', '--keepParent', exportRoot, zipPath]);
+    } catch {
+      const zipEntries = [];
+      for (const row of artifacts) {
+        const artifactId = String(row.artifact_id || '').trim();
+        if (!artifactId) continue;
+        const artifactName = safeFolderPart(row.artifact_name || '');
+        const basePath = `${rootDirName}/${artifactId}_${artifactName}/`;
+        zipEntries.push({
+          name: `${basePath}请将素材放在此目录.txt`,
+          data: Buffer.from(
+            [
+              '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
+              '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
+              ''
+            ].join('\n'),
+            'utf8'
+          )
+        });
+      }
+      await fs.writeFile(zipPath, makeZipArchive(zipEntries));
+    }
+
+    return {
+      fileName: zipFilename,
+      path: zipPath,
+      url: `/uploads/generated-downloads/${encodeURIComponent(zipFilename)}`,
+      count: artifacts.length
+    };
+  } finally {
+    await fs.rm(tempBase, { recursive: true, force: true });
+  }
+}
+
 async function parseArtifactFolderExportBody(req) {
   const contentType = String(req.headers['content-type'] || '').toLowerCase();
   if (contentType.includes('application/json')) {
@@ -1258,21 +1363,17 @@ async function handleArtifactFoldersPrepare(req, res) {
 
   try {
     const body = await parseJsonBody(req);
-    const artifacts = Array.isArray(body?.artifacts) ? sanitizeRows(body.artifacts, ARTIFACT_HEADERS) : [];
+    const incoming = Array.isArray(body?.artifacts) ? sanitizeRows(body.artifacts, ARTIFACT_HEADERS) : [];
+    const artifacts = await resolveArtifactFolderExportArtifacts(session, incoming);
     if (!artifacts.length) {
       return json(res, 400, { ok: false, message: '当前权限范围内暂无成果，无法导出目录结构。' });
     }
-    cleanupArtifactFolderExportJobs();
-    const token = crypto.randomBytes(16).toString('hex');
-    artifactFolderExportJobs.set(token, {
-      sid: session.sid,
-      artifacts,
-      expiresAt: Date.now() + 5 * 60 * 1000
-    });
+    const zip = await createArtifactFoldersZipFile(artifacts);
     return json(res, 200, {
       ok: true,
-      downloadUrl: `/api/artifact-folders/export?token=${token}`,
-      count: artifacts.length
+      downloadUrl: zip.url,
+      count: zip.count,
+      fileName: zip.fileName
     });
   } catch (error) {
     return json(res, 400, { ok: false, message: `导出目录结构准备失败：${error.message}` });
@@ -1283,8 +1384,6 @@ async function handleArtifactFoldersExport(req, res) {
   const session = getSession(req);
   if (!session) return unauthorized(res);
 
-  const base = await loadAllBaseTables();
-  const scoped = isAdminSession(session) ? base : filterBaseByScope(base, session.clubIds || []);
   let incomingArtifacts = [];
   const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const token = requestUrl.searchParams.get('token') || '';
@@ -1304,13 +1403,7 @@ async function handleArtifactFoldersExport(req, res) {
     }
   }
 
-  const scopeClubIds = new Set((session.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
-  const candidates = incomingArtifacts.length ? incomingArtifacts : sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS);
-  const artifacts = dedupeArtifactsForFolderExport(
-    isAdminSession(session)
-      ? candidates
-      : candidates.filter((row) => scopeClubIds.has(String(row.club_id || '').trim()))
-  );
+  const artifacts = await resolveArtifactFolderExportArtifacts(session, incomingArtifacts);
   if (!artifacts.length) {
     return json(res, 400, { ok: false, message: '当前权限范围内暂无成果，无法导出目录结构。' });
   }
@@ -1389,7 +1482,7 @@ async function serveStatic(req, res, pathname) {
     const ext = path.extname(target).toLowerCase();
     const mime = MIME[ext] || 'application/octet-stream';
     const content = await fs.readFile(target);
-    const headers = { 'Content-Type': mime };
+    const headers = { 'Content-Type': mime, 'Content-Length': content.length };
     if (safePath.startsWith('/src/')) {
       headers['Cache-Control'] = 'no-store, no-cache, must-revalidate';
       headers.Pragma = 'no-cache';
@@ -1397,6 +1490,11 @@ async function serveStatic(req, res, pathname) {
     }
     if (safePath.startsWith('/data/')) {
       headers['Cache-Control'] = 'no-store';
+    }
+    if (safePath.startsWith('/uploads/generated-downloads/') && ext === '.zip') {
+      const filename = path.basename(target);
+      headers['Cache-Control'] = 'no-store';
+      headers['Content-Disposition'] = `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
     }
     res.writeHead(200, headers);
     res.end(content);
