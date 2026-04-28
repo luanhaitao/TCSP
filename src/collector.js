@@ -1684,24 +1684,34 @@ async function exportArtifactFolders() {
   setStatus('正在生成目录结构模板，请稍候...');
   await setButtonBusy('exportArtifactFolders', '正在导出...', async () => {
     try {
-      const resp = await fetch('/api/artifact-folders/export', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ artifacts: allArtifacts() })
-      });
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data?.message || `HTTP ${resp.status}`);
+      const artifacts = allArtifacts();
+      if (!artifacts.length) {
+        throw new Error('当前权限范围内暂无成果，无法导出目录结构。');
       }
-      const blob = await resp.blob();
-      const fallback = `artifact_folders_template_${new Date().toISOString().slice(0, 10)}.zip`;
-      const filename = parseDownloadFilename(resp.headers.get('Content-Disposition'), fallback);
-      const folderCount = resp.headers.get('X-Artifact-Folder-Count') || '';
-      downloadBlob(filename, blob);
-      const msg = folderCount
-        ? `目录结构模板导出成功：已生成 ${folderCount} 个成果文件夹，请解压后使用。`
-        : '目录结构模板导出成功，请解压后使用。';
+      const frameName = `artifactFolderDownload_${Date.now()}`;
+      const iframe = document.createElement('iframe');
+      iframe.name = frameName;
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/api/artifact-folders/export';
+      form.target = frameName;
+      form.style.display = 'none';
+
+      const payload = document.createElement('input');
+      payload.type = 'hidden';
+      payload.name = 'payload';
+      payload.value = JSON.stringify({ artifacts });
+      form.appendChild(payload);
+
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+      setTimeout(() => iframe.remove(), 2 * 60 * 1000);
+
+      const msg = `目录结构模板已开始下载：预计包含 ${artifacts.length} 个成果文件夹。若浏览器询问，请选择保存。`;
       setActionStatus('artifactFolderStatus', msg);
       setStatus(msg);
     } catch (error) {

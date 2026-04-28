@@ -507,6 +507,17 @@ async function parseJsonBody(req) {
   return JSON.parse(data || '{}');
 }
 
+async function parseTextBody(req, maxBytes = 10 * 1024 * 1024) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) throw new Error(`请求体过大，超过 ${Math.floor(maxBytes / 1024 / 1024)}MB。`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function collectRawBody(req, maxBytes) {
   const chunks = [];
   let total = 0;
@@ -1222,6 +1233,20 @@ function dedupeArtifactsForFolderExport(artifacts) {
   return order.map((id) => map.get(id)).filter(Boolean);
 }
 
+async function parseArtifactFolderExportBody(req) {
+  const contentType = String(req.headers['content-type'] || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    return parseJsonBody(req);
+  }
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const text = await parseTextBody(req);
+    const params = new URLSearchParams(text);
+    const payload = params.get('payload') || '';
+    return payload ? JSON.parse(payload) : {};
+  }
+  return {};
+}
+
 async function handleArtifactFoldersExport(req, res) {
   const session = getSession(req);
   if (!session) return unauthorized(res);
@@ -1231,7 +1256,7 @@ async function handleArtifactFoldersExport(req, res) {
   let incomingArtifacts = [];
   if (req.method === 'POST') {
     try {
-      const body = await parseJsonBody(req);
+      const body = await parseArtifactFolderExportBody(req);
       if (Array.isArray(body?.artifacts)) incomingArtifacts = sanitizeRows(body.artifacts, ARTIFACT_HEADERS);
     } catch {
       return json(res, 400, { ok: false, message: '导出目录结构失败：请求数据格式不正确。' });
