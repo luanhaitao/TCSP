@@ -1172,7 +1172,6 @@ function makeZipArchive(entries) {
     const nameBuf = Buffer.from(name, 'utf8');
     const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data || '');
     const crc = crc32(data);
-    const isDir = name.endsWith('/');
     const flags = 0x0800; // UTF-8 filenames for Windows/macOS/Linux unzip tools.
 
     const localHeader = Buffer.alloc(30);
@@ -1205,9 +1204,7 @@ function makeZipArchive(entries) {
     centralHeader.writeUInt16LE(0, 32);
     centralHeader.writeUInt16LE(0, 34);
     centralHeader.writeUInt16LE(0, 36);
-    const unixMode = isDir ? 0o40755 : 0o100644;
-    const dosAttr = isDir ? 0x10 : 0x20;
-    centralHeader.writeUInt32LE((((unixMode << 16) >>> 0) | dosAttr) >>> 0, 38);
+    centralHeader.writeUInt32LE((((0o100644 << 16) >>> 0) | 0x20) >>> 0, 38);
     centralHeader.writeUInt32LE(offset, 42);
     centralParts.push(centralHeader, nameBuf);
 
@@ -1319,17 +1316,16 @@ async function handleArtifactFoldersExport(req, res) {
   }
 
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-  const rootDirName = `素材目录模板_${stamp}`;
+  const rootDirName = `artifact_folders_template_${stamp}`;
 
   try {
-    const zipEntries = [{ name: `${rootDirName}/`, data: Buffer.alloc(0) }];
+    const zipEntries = [];
     for (const row of artifacts) {
       const artifactId = String(row.artifact_id || '').trim();
       if (!artifactId) continue;
       const artifactName = safeFolderPart(row.artifact_name || '');
       const folderName = `${artifactId}_${artifactName}`;
       const basePath = `${rootDirName}/${folderName}/`;
-      zipEntries.push({ name: basePath, data: Buffer.alloc(0) });
       zipEntries.push({
         name: `${basePath}请将素材放在此目录.txt`,
         data: Buffer.from(
