@@ -1679,6 +1679,63 @@ function parseDownloadFilename(contentDisposition, fallbackName) {
   return fallbackName;
 }
 
+function safeFolderPartForClient(text, fallback = '未命名成果') {
+  const normalized = String(text || '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .trim();
+  return normalized || fallback;
+}
+
+function buildArtifactFolderListText() {
+  const artifacts = allArtifacts();
+  const lines = [
+    '素材目录结构清单',
+    '',
+    '使用方法：',
+    '1. 新建一个总文件夹，例如“素材根目录”。',
+    '2. 在总文件夹下建立下面这些子文件夹。',
+    '3. 把每个成果对应的图片/视频/PDF/互动网页放进对应子文件夹。',
+    '4. 回到收集器“新增素材绑定”，选择这个总文件夹并一键导入。',
+    '',
+    '目录名称如下：'
+  ];
+  artifacts.forEach((row) => {
+    const artifactId = String(row.artifact_id || '').trim();
+    if (!artifactId) return;
+    lines.push(`${artifactId}_${safeFolderPartForClient(row.artifact_name || '')}`);
+  });
+  return { artifacts, text: `${lines.join('\n')}\n` };
+}
+
+async function copyArtifactFolderList() {
+  const { artifacts, text } = buildArtifactFolderListText();
+  if (!artifacts.length) {
+    setActionStatus('artifactFolderStatus', '当前权限范围内暂无成果，无法复制目录清单。', true);
+    setStatus('当前权限范围内暂无成果，无法复制目录清单。', true);
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  }
+
+  const msg = `目录清单已复制：共 ${artifacts.length} 个成果文件夹。若 ZIP 下载卡住，可按清单手动建文件夹。`;
+  setActionStatus('artifactFolderStatus', msg);
+  setStatus(msg);
+}
+
 async function exportArtifactFolders() {
   setActionStatus('artifactFolderStatus', '正在生成目录结构模板，请稍候...');
   setStatus('正在生成目录结构模板，请稍候...');
@@ -1708,9 +1765,10 @@ async function exportArtifactFolders() {
 }
 
 function bindArtifactFolderExportAction() {
-  const btn = byId('exportArtifactFolders');
-  if (!btn) return;
-  btn.addEventListener('click', exportArtifactFolders);
+  const exportBtn = byId('exportArtifactFolders');
+  if (exportBtn) exportBtn.addEventListener('click', exportArtifactFolders);
+  const copyBtn = byId('copyArtifactFolderList');
+  if (copyBtn) copyBtn.addEventListener('click', copyArtifactFolderList);
 }
 
 function createMediaIdGenerator() {
