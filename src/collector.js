@@ -1685,8 +1685,10 @@ async function exportArtifactFolders() {
   await setButtonBusy('exportArtifactFolders', '正在导出...', async () => {
     try {
       const resp = await fetch('/api/artifact-folders/export', {
-        method: 'GET',
-        credentials: 'same-origin'
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifacts: allArtifacts() })
       });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
@@ -1695,9 +1697,13 @@ async function exportArtifactFolders() {
       const blob = await resp.blob();
       const fallback = `artifact_folders_template_${new Date().toISOString().slice(0, 10)}.zip`;
       const filename = parseDownloadFilename(resp.headers.get('Content-Disposition'), fallback);
+      const folderCount = resp.headers.get('X-Artifact-Folder-Count') || '';
       downloadBlob(filename, blob);
-      setActionStatus('artifactFolderStatus', '目录结构模板导出成功，请解压后使用。');
-      setStatus('目录结构模板导出成功，请解压后使用。');
+      const msg = folderCount
+        ? `目录结构模板导出成功：已生成 ${folderCount} 个成果文件夹，请解压后使用。`
+        : '目录结构模板导出成功，请解压后使用。';
+      setActionStatus('artifactFolderStatus', msg);
+      setStatus(msg);
     } catch (error) {
       setActionStatus('artifactFolderStatus', `目录结构模板导出失败：${error.message}`, true);
       setStatus(`目录结构模板导出失败：${error.message}`, true);

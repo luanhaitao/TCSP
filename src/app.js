@@ -121,6 +121,27 @@ function getMediaForClub(clubId) {
   return state.media.filter((m) => m.owner_type === 'club' && m.owner_id === clubId);
 }
 
+function buildVisibleState(raw) {
+  const allClubs = raw.clubs.map(normalizeClub);
+  const allArtifacts = raw.artifacts.map(normalizeArtifact);
+  const allMedia = raw.media.map(normalizeMedia);
+
+  const visibleClubs = allClubs.filter((club) => club.status !== 'archived');
+  const visibleClubIds = new Set(visibleClubs.map((club) => club.club_id));
+  const visibleArtifacts = allArtifacts.filter((artifact) => visibleClubIds.has(artifact.club_id));
+  const visibleArtifactIds = new Set(visibleArtifacts.map((artifact) => artifact.artifact_id));
+  const visibleMedia = allMedia.filter((media) => {
+    if (media.owner_type === 'club') return visibleClubIds.has(media.owner_id);
+    if (media.owner_type === 'artifact') return visibleArtifactIds.has(media.owner_id);
+    return false;
+  });
+
+  return {
+    all: { clubs: allClubs, artifacts: allArtifacts, media: allMedia },
+    visible: { clubs: visibleClubs, artifacts: visibleArtifacts, media: visibleMedia }
+  };
+}
+
 function renderStats() {
   const clubCount = state.clubs.length;
   const studentCount = new Set(state.artifacts.map((item) => `${item.club_id}-${item.student_alias}`)).size;
@@ -391,12 +412,13 @@ function stopDialogMedia() {
 async function boot() {
   try {
     const raw = await loadAllTables();
-    state.clubs = raw.clubs.map(normalizeClub).filter((club) => club.status !== 'archived');
-    state.artifacts = raw.artifacts.map(normalizeArtifact);
-    state.media = raw.media.map(normalizeMedia);
+    const prepared = buildVisibleState(raw);
+    state.clubs = prepared.visible.clubs;
+    state.artifacts = prepared.visible.artifacts;
+    state.media = prepared.visible.media;
 
     const issues = validateData(
-      { clubs: state.clubs, artifacts: state.artifacts, media: state.media },
+      prepared.all,
       CONFIG.defaults.maxTextLength
     );
 

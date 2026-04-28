@@ -1110,8 +1110,116 @@ function safeFolderPart(text, fallback = '未命名成果') {
   const normalized = String(text || '')
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
     .trim();
   return normalized || fallback;
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let j = 0; j < 8; j += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let c = 0xffffffff;
+  for (const byte of buffer) {
+    c = CRC32_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function zipDosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { dosTime, dosDate };
+}
+
+function makeZipArchive(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const { dosTime, dosDate } = zipDosDateTime();
+
+  entries.forEach((entry) => {
+    const name = String(entry.name || '').replace(/\\/g, '/');
+    const nameBuf = Buffer.from(name, 'utf8');
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data || '');
+    const crc = crc32(data);
+    const isDir = name.endsWith('/');
+    const flags = 0x0800; // UTF-8 filenames for Windows/macOS/Linux unzip tools.
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(flags, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(dosTime, 10);
+    localHeader.writeUInt16LE(dosDate, 12);
+    localHeader.writeUInt32LE(crc, 14);
+    localHeader.writeUInt32LE(data.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(nameBuf.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    localParts.push(localHeader, nameBuf, data);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(0x0314, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(flags, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(dosTime, 12);
+    centralHeader.writeUInt16LE(dosDate, 14);
+    centralHeader.writeUInt32LE(crc, 16);
+    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(nameBuf.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    const unixMode = isDir ? 0o40755 : 0o100644;
+    const dosAttr = isDir ? 0x10 : 0x20;
+    centralHeader.writeUInt32LE((((unixMode << 16) >>> 0) | dosAttr) >>> 0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    centralParts.push(centralHeader, nameBuf);
+
+    offset += localHeader.length + nameBuf.length + data.length;
+  });
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(centralOffset, 16);
+  end.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, ...centralParts, end]);
+}
+
+function dedupeArtifactsForFolderExport(artifacts) {
+  const map = new Map();
+  const order = [];
+  for (const row of artifacts) {
+    const artifactId = String(row.artifact_id || '').trim();
+    if (!artifactId) continue;
+    if (!map.has(artifactId)) order.push(artifactId);
+    map.set(artifactId, row);
+  }
+  return order.map((id) => map.get(id)).filter(Boolean);
 }
 
 async function handleArtifactFoldersExport(req, res) {
@@ -1120,66 +1228,65 @@ async function handleArtifactFoldersExport(req, res) {
 
   const base = await loadAllBaseTables();
   const scoped = isAdminSession(session) ? base : filterBaseByScope(base, session.clubIds || []);
-  const artifacts = sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS);
+  let incomingArtifacts = [];
+  if (req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      if (Array.isArray(body?.artifacts)) incomingArtifacts = sanitizeRows(body.artifacts, ARTIFACT_HEADERS);
+    } catch {
+      return json(res, 400, { ok: false, message: '导出目录结构失败：请求数据格式不正确。' });
+    }
+  }
+
+  const scopeClubIds = new Set((session.clubIds || []).map((id) => String(id).trim()).filter(Boolean));
+  const candidates = incomingArtifacts.length ? incomingArtifacts : sanitizeRows(scoped.artifacts, ARTIFACT_HEADERS);
+  const artifacts = dedupeArtifactsForFolderExport(
+    isAdminSession(session)
+      ? candidates
+      : candidates.filter((row) => scopeClubIds.has(String(row.club_id || '').trim()))
+  );
   if (!artifacts.length) {
     return json(res, 400, { ok: false, message: '当前权限范围内暂无成果，无法导出目录结构。' });
   }
 
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
   const rootDirName = `素材目录模板_${stamp}`;
-  const tempBase = await fs.mkdtemp(path.join(os.tmpdir(), 'tcsp-artifact-folders-'));
-  const exportRoot = path.join(tempBase, rootDirName);
 
   try {
-    await fs.mkdir(exportRoot, { recursive: true });
+    const zipEntries = [{ name: `${rootDirName}/`, data: Buffer.alloc(0) }];
     for (const row of artifacts) {
       const artifactId = String(row.artifact_id || '').trim();
       if (!artifactId) continue;
       const artifactName = safeFolderPart(row.artifact_name || '');
       const folderName = `${artifactId}_${artifactName}`;
-      const folderPath = path.join(exportRoot, folderName);
-      await fs.mkdir(folderPath, { recursive: true });
-      await fs.writeFile(
-        path.join(folderPath, '请将素材放在此目录.txt'),
-        '请将该成果的图片/视频/PDF放在当前目录，然后在收集器里执行目录一键导入。\n',
-        'utf8'
-      );
+      const basePath = `${rootDirName}/${folderName}/`;
+      zipEntries.push({ name: basePath, data: Buffer.alloc(0) });
+      zipEntries.push({
+        name: `${basePath}请将素材放在此目录.txt`,
+        data: Buffer.from(
+          [
+            '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
+            '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。',
+            ''
+          ].join('\n'),
+          'utf8'
+        )
+      });
     }
 
     const zipFilename = `artifact_folders_template_${stamp}.zip`;
-    const zip = spawn('zip', ['-r', '-', rootDirName], { cwd: tempBase });
-    let stderr = '';
-    zip.stderr.on('data', (buf) => { stderr += String(buf || ''); });
-    zip.on('error', async (err) => {
-      await fs.rm(tempBase, { recursive: true, force: true });
-      if (!res.headersSent) {
-        const msg = err?.code === 'ENOENT'
-          ? '服务器缺少 zip 命令，无法导出目录压缩包。'
-          : `导出失败：${err.message}`;
-        json(res, 500, { ok: false, message: msg });
-      } else {
-        res.destroy();
-      }
-    });
+    const zipBuffer = makeZipArchive(zipEntries);
 
     res.writeHead(200, {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${zipFilename}"; filename*=UTF-8''${encodeURIComponent(zipFilename)}`,
       'Cache-Control': 'no-store',
+      'Content-Length': zipBuffer.length,
+      'X-Artifact-Folder-Count': String(artifacts.length),
       ...corsHeaders()
     });
-    zip.stdout.pipe(res);
-    zip.on('close', async (code) => {
-      await fs.rm(tempBase, { recursive: true, force: true });
-      if (code !== 0 && !res.writableEnded) {
-        res.end();
-      }
-      if (code !== 0) {
-        console.error(`导出素材目录模板失败: zip exit ${code}. ${stderr.trim()}`);
-      }
-    });
+    res.end(zipBuffer);
   } catch (error) {
-    await fs.rm(tempBase, { recursive: true, force: true });
     return json(res, 500, { ok: false, message: `导出目录结构失败：${error.message}` });
   }
 }
@@ -1268,7 +1375,7 @@ const server = http.createServer(async (req, res) => {
     return handleAdminBackup(req, res);
   }
 
-  if (pathname === '/api/artifact-folders/export' && req.method === 'GET') {
+  if (pathname === '/api/artifact-folders/export' && (req.method === 'GET' || req.method === 'POST')) {
     return handleArtifactFoldersExport(req, res);
   }
 
