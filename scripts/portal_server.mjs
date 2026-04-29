@@ -656,6 +656,66 @@ async function runCommand(cmd, args) {
   });
 }
 
+async function runCommandWithTimeout(cmd, args, timeoutMs = 12000) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'ignore' });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`${cmd} timed out`));
+    }, timeoutMs);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} exited with code ${code}`));
+    });
+  });
+}
+
+async function findBrowserForScreenshot() {
+  const candidates = [
+    process.env.TCSP_SCREENSHOT_BROWSER,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium'
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) return candidate;
+  }
+  return '';
+}
+
+async function captureHtmlHomepage(htmlPath, outputPath) {
+  const browser = await findBrowserForScreenshot();
+  if (!browser) return false;
+  const targetUrl = url.pathToFileURL(htmlPath).href;
+  const args = [
+    '--headless=new',
+    '--disable-gpu',
+    '--hide-scrollbars',
+    '--allow-file-access-from-files',
+    '--window-size=1280,720',
+    '--virtual-time-budget=2500',
+    `--screenshot=${outputPath}`,
+    targetUrl
+  ];
+  try {
+    await runCommandWithTimeout(browser, args, 15000);
+    const stat = await fs.stat(outputPath);
+    return stat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function extractGifFirstFrame(gifPath, outputPath) {
   const strategies = [];
   if (process.platform === 'darwin') {
@@ -839,11 +899,26 @@ async function handleUploadHtmlFolder(req, res) {
       await fs.writeFile(targetPath, part.content);
     }
 
+    let thumbnailRelUrl = '';
+    let thumbnailBackupPath = '';
+    const thumbName = `${dirName}_homepage.png`;
+    const thumbPath = path.join(uploadDir, thumbName);
+    const thumbOk = await captureHtmlHomepage(path.join(htmlDir, 'index.html'), thumbPath);
+    if (thumbOk) {
+      thumbnailRelUrl = `/uploads/${dateDir}/${thumbName}`;
+      thumbnailBackupPath = await backupUploadedFile(thumbPath, dateDir, thumbName, {
+        media_type: 'image',
+        derived_from: htmlDir,
+        is_html_homepage_screenshot: true
+      });
+    }
+
     const backupPath = await backupUploadedDirectory(htmlDir, dateDir, dirName, {
       media_type: 'html',
       entry: 'index.html',
       bytes: totalBytes,
-      file_count: safeParts.length
+      file_count: safeParts.length,
+      thumbnail_url: thumbnailRelUrl
     });
 
     const relUrl = `/uploads/${dateDir}/${dirName}/index.html`;
@@ -860,7 +935,9 @@ async function handleUploadHtmlFolder(req, res) {
       entry: 'index.html',
       bytes: totalBytes,
       fileCount: safeParts.length,
-      backupPath: path.relative(ROOT, backupPath)
+      backupPath: path.relative(ROOT, backupPath),
+      thumbnailUrl: thumbnailRelUrl,
+      thumbnailBackupPath: thumbnailBackupPath ? path.relative(ROOT, thumbnailBackupPath) : ''
     });
   } catch (error) {
     return json(res, 500, { ok: false, message: `互动网页上传失败：${error.message}` });

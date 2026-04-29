@@ -251,6 +251,15 @@
             <p id="mediaUploadStatus" class="action-status">上传后会自动填入“素材URL”和素材类型。</p>
           </div>
           <label>封面图URL（视频/网页可选）<input id="thumbnail_url" placeholder="https://... 或 /uploads/.../cover.jpg" /></label>
+          <div class="full-row">
+            <label>封面图本地上传（视频/网页推荐）
+              <div class="inline upload-inline">
+                <input id="thumbnail_file" type="file" accept="image/*" />
+                <button id="uploadThumbnailBtn" type="button">上传并填入封面图链接</button>
+              </div>
+            </label>
+            <p id="thumbnailUploadStatus" class="action-status">可上传一张本地图片作为视频或互动网页成果封面。</p>
+          </div>
           <label>版权状态<input id="copyright_status" placeholder="例如 学校授权" /></label>
           <label>备注<input id="notes" placeholder="例如 成果截图" /></label>
         </div>

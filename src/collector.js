@@ -1398,6 +1398,7 @@ function bindClearActions() {
     byId('media_id').value = '';
     byId('media_url').value = '';
     byId('media_file').value = '';
+    byId('thumbnail_file').value = '';
     byId('thumbnail_url').value = '';
     byId('copyright_status').value = '';
     byId('notes').value = '';
@@ -1595,6 +1596,38 @@ async function uploadMediaFile() {
       setStatus('素材上传成功，已自动填入素材链接');
     } catch (error) {
       setActionStatus('mediaUploadStatus', error.message, true);
+      setStatus(error.message, true);
+    }
+  });
+}
+
+async function uploadThumbnailFile() {
+  const file = byId('thumbnail_file').files?.[0];
+  if (!file) {
+    setActionStatus('thumbnailUploadStatus', '请先选择封面图片文件。', true);
+    setStatus('请先选择封面图片文件', true);
+    return;
+  }
+  setActionStatus('thumbnailUploadStatus', '正在上传封面图，请稍候...');
+  setStatus('正在上传封面图，请稍候...');
+  await setButtonBusy('uploadThumbnailBtn', '正在上传...', async () => {
+    try {
+      const result = await uploadLocalFile(file, { publicId: `media_thumb_${Date.now()}` });
+      if (result.mediaType !== 'image') {
+        setActionStatus('thumbnailUploadStatus', '封面上传失败：请选择图片文件。', true);
+        setStatus('封面上传失败：请选择图片文件', true);
+        return;
+      }
+      byId('thumbnail_url').value = result.thumbnailUrl || result.url;
+      if (result.thumbnailUrl) {
+        setActionStatus('thumbnailUploadStatus', '封面上传成功：检测到GIF，已自动使用第一帧作为封面图。');
+        setStatus('封面上传成功：已自动使用GIF第一帧作为封面图。');
+        return;
+      }
+      setActionStatus('thumbnailUploadStatus', '封面上传成功，已自动填入封面图链接。');
+      setStatus('封面上传成功，已自动填入封面图链接。');
+    } catch (error) {
+      setActionStatus('thumbnailUploadStatus', error.message, true);
       setStatus(error.message, true);
     }
   });
@@ -2302,7 +2335,7 @@ async function importMediaFromFolder() {
           owner_id: item.ownerId,
           media_type: 'html',
           url: uploaded.url,
-          thumbnail_url: '',
+          thumbnail_url: uploaded.thumbnailUrl || '',
           copyright_status: '',
           notes: `目录导入：互动网页 ${item.folderName}`
         });
@@ -2356,9 +2389,11 @@ function bindMediaFolderImportActions() {
 function bindUploadActions() {
   byId('uploadCoverBtn').addEventListener('click', uploadCoverFile);
   byId('uploadMediaBtn').addEventListener('click', uploadMediaFile);
+  byId('uploadThumbnailBtn').addEventListener('click', uploadThumbnailFile);
   if (!CONFIG.assetUpload?.enabled) {
     byId('uploadCoverBtn').disabled = true;
     byId('uploadMediaBtn').disabled = true;
+    byId('uploadThumbnailBtn').disabled = true;
   }
 }
 
