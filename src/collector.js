@@ -1502,10 +1502,14 @@ async function publishDrafts() {
       (result.mode === 'admin_full_sync' ? '（管理员全量同步模式）' : '') +
       ((result.blocked && (result.blocked.clubs + result.blocked.artifacts + result.blocked.media) > 0)
         ? `（已拦截越权草稿 ${result.blocked.clubs + result.blocked.artifacts + result.blocked.media} 条）`
+        : '') +
+      ((result.stats?.html_thumbnails_generated ?? 0) > 0
+        ? `（已自动补网页封面 ${result.stats.html_thumbnails_generated} 张）`
         : '')
     );
     setStatus(
       `发布成功：社团 ${result.stats?.clubs_published ?? 0} 条，成果 ${result.stats?.artifacts_published ?? 0} 条，素材 ${result.stats?.media_published ?? 0} 条。` +
+      ((result.stats?.html_thumbnails_generated ?? 0) > 0 ? `已自动补网页封面 ${result.stats.html_thumbnails_generated} 张。` : '') +
       `（已自动备份：${result.backupDir || 'N/A'}）`
     );
   } catch (error) {

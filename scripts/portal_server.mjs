@@ -953,6 +953,77 @@ async function handleUploadHtmlFolder(req, res) {
   }
 }
 
+function localUploadPathFromUrl(raw) {
+  const text = String(raw || '').trim();
+  if (!text.startsWith('/uploads/')) return '';
+  let pathname = text.split(/[?#]/)[0];
+  try {
+    pathname = new URL(text, 'http://tcsp.local').pathname;
+  } catch {
+    // keep the path-only fallback above
+  }
+  if (!pathname.startsWith('/uploads/')) return '';
+  let rel = pathname.slice('/uploads/'.length);
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {
+    return '';
+  }
+  const fullPath = path.resolve(UPLOADS_DIR, rel);
+  return isPathInside(UPLOADS_DIR, fullPath) ? fullPath : '';
+}
+
+async function ensureHtmlMediaThumbnails(rows) {
+  let generated = 0;
+  const nextRows = [];
+  for (const row of rows) {
+    const mediaType = String(row.media_type || '').trim();
+    const thumbnailUrl = String(row.thumbnail_url || '').trim();
+    const mediaUrl = String(row.url || '').trim();
+    if (mediaType !== 'html' || thumbnailUrl || !mediaUrl.startsWith('/uploads/')) {
+      nextRows.push(row);
+      continue;
+    }
+
+    const htmlPath = localUploadPathFromUrl(mediaUrl);
+    const htmlExt = path.extname(htmlPath).toLowerCase();
+    if (!htmlPath || !['.html', '.htm'].includes(htmlExt) || !(await pathExists(htmlPath))) {
+      nextRows.push(row);
+      continue;
+    }
+
+    const relDir = path.relative(UPLOADS_DIR, path.dirname(htmlPath));
+    const parts = relDir.split(path.sep).filter(Boolean);
+    const dateDir = parts[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const stem = safeFolderPart(path.basename(path.dirname(htmlPath)), 'html');
+    const thumbName = `${stem}_homepage_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
+    const thumbPath = path.join(UPLOADS_DIR, dateDir, thumbName);
+
+    const ok = await captureHtmlHomepage(htmlPath, thumbPath);
+    if (!ok) {
+      nextRows.push(row);
+      continue;
+    }
+
+    const stat = await fs.stat(thumbPath).catch(() => null);
+    if (!stat?.size) {
+      nextRows.push(row);
+      continue;
+    }
+
+    const relUrl = `/uploads/${dateDir}/${thumbName}`;
+    await backupUploadedFile(thumbPath, dateDir, thumbName, {
+      media_type: 'image',
+      derived_from: htmlPath,
+      is_html_homepage_screenshot: true,
+      generated_on_publish: true
+    });
+    nextRows.push({ ...row, thumbnail_url: relUrl });
+    generated += 1;
+  }
+  return { rows: nextRows, generated };
+}
+
 async function handlePublish(req, res) {
   try {
     const session = getSession(req);
@@ -1057,6 +1128,9 @@ async function handlePublish(req, res) {
       }
     }
 
+    const htmlThumbnailResult = await ensureHtmlMediaThumbnails(mergedMedia);
+    mergedMedia = htmlThumbnailResult.rows;
+
     await fs.writeFile(clubFile, toCsv(CLUB_HEADERS, mergedClubs), 'utf8');
     await fs.writeFile(artifactFile, toCsv(ARTIFACT_HEADERS, mergedArtifacts), 'utf8');
     await fs.writeFile(mediaFile, toCsv(MEDIA_HEADERS, mergedMedia), 'utf8');
@@ -1073,6 +1147,7 @@ async function handlePublish(req, res) {
         media_published: scoped.media.length,
         artifacts_deleted: artifactsDeleted,
         media_deleted: mediaDeleted,
+        html_thumbnails_generated: htmlThumbnailResult.generated,
         delete_blocked_artifacts: blockedArtifactDelete,
         delete_blocked_media: blockedMediaDelete,
         clubs_total: mergedClubs.length,
