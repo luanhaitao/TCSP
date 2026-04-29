@@ -1722,17 +1722,27 @@ async function writeTextToClipboard(text) {
   }
 }
 
-function showArtifactFolderCommand(text, platformName) {
+function getClientPlatformKind() {
+  const platform = String(navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
+  return platform.includes('win') ? 'windows' : 'unix';
+}
+
+function showArtifactFolderCommands(commands, preferredKind = getClientPlatformKind()) {
   const box = byId('artifactFolderCommandBox');
-  const textarea = byId('artifactFolderCommandText');
+  const windowsTextarea = byId('artifactFolderCommandWindows');
+  const unixTextarea = byId('artifactFolderCommandUnix');
   const hint = byId('artifactFolderCommandHint');
-  if (!box || !textarea) return;
+  if (!box || !windowsTextarea || !unixTextarea) return;
   box.classList.remove('is-hidden');
-  textarea.value = text;
-  textarea.focus();
-  textarea.select();
+  windowsTextarea.value = commands.windowsText;
+  unixTextarea.value = commands.unixText;
+
+  const preferredTextarea = preferredKind === 'windows' ? windowsTextarea : unixTextarea;
+  preferredTextarea.focus();
+  preferredTextarea.select();
   if (hint) {
-    hint.textContent = `适用于 ${platformName}。如果没有自动复制，请按 Ctrl/Cmd + C 手动复制。`;
+    const platformName = preferredKind === 'windows' ? 'Windows PowerShell' : 'macOS/Linux 终端';
+    hint.textContent = `已自动选中 ${platformName} 命令。如自动复制失败，请手动 Ctrl/Cmd + C 复制对应命令。`;
   }
 }
 
@@ -1765,7 +1775,7 @@ function quoteShellSingle(text) {
   return `'${String(text).replace(/'/g, "'\\''")}'`;
 }
 
-function buildArtifactFolderCommandText() {
+function buildArtifactFolderCommands() {
   const artifacts = allArtifacts().filter((row) => String(row.artifact_id || '').trim());
   const stamp = new Date();
   const stampText = [
@@ -1783,31 +1793,26 @@ function buildArtifactFolderCommandText() {
   const folderNames = artifacts.map((row) => (
     `${String(row.artifact_id || '').trim()}_${safeFolderPartForClient(row.artifact_name || '')}`
   ));
-  const platform = String(navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
-  const isWindows = platform.includes('win');
 
-  if (isWindows) {
-    const lines = [
-      '# 使用方法：打开 Windows PowerShell，粘贴本段命令后回车。',
-      `$root = Join-Path ([Environment]::GetFolderPath('Desktop')) ${quotePowerShellSingle(rootName)}`,
-      'New-Item -ItemType Directory -Force -Path $root | Out-Null',
-      "$note = @'",
-      note,
-      "'@",
-      '$dirs = @(',
-      ...folderNames.map((name) => `  ${quotePowerShellSingle(name)}`),
-      ')',
-      'foreach ($dir in $dirs) {',
-      '  $path = Join-Path $root $dir',
-      '  New-Item -ItemType Directory -Force -Path $path | Out-Null',
-      "  Set-Content -LiteralPath (Join-Path $path '请将素材放在此目录.txt') -Value $note -Encoding UTF8",
-      '}',
-      'Write-Host "已生成素材目录：" $root'
-    ];
-    return { artifacts, text: `${lines.join('\n')}\n`, platformName: 'Windows PowerShell' };
-  }
+  const windowsLines = [
+    '# 使用方法：打开 Windows PowerShell，粘贴本段命令后回车。',
+    `$root = Join-Path ([Environment]::GetFolderPath('Desktop')) ${quotePowerShellSingle(rootName)}`,
+    'New-Item -ItemType Directory -Force -Path $root | Out-Null',
+    "$note = @'",
+    note,
+    "'@",
+    '$dirs = @(',
+    ...folderNames.map((name) => `  ${quotePowerShellSingle(name)}`),
+    ')',
+    'foreach ($dir in $dirs) {',
+    '  $path = Join-Path $root $dir',
+    '  New-Item -ItemType Directory -Force -Path $path | Out-Null',
+    "  Set-Content -LiteralPath (Join-Path $path '请将素材放在此目录.txt') -Value $note -Encoding UTF8",
+    '}',
+    'Write-Host "已生成素材目录：" $root'
+  ];
 
-  const lines = [
+  const unixLines = [
     '# 使用方法：打开 macOS/Linux 终端，粘贴本段命令后回车。',
     `root="$HOME/Desktop/${rootName}"`,
     'mkdir -p "$root"',
@@ -1821,7 +1826,11 @@ function buildArtifactFolderCommandText() {
     'TCSP_DIRS',
     'echo "已生成素材目录：$root"'
   ];
-  return { artifacts, text: `${lines.join('\n')}\n`, platformName: 'macOS/Linux 终端' };
+  return {
+    artifacts,
+    windowsText: `${windowsLines.join('\n')}\n`,
+    unixText: `${unixLines.join('\n')}\n`
+  };
 }
 
 async function copyArtifactFolderList() {
@@ -1842,20 +1851,44 @@ async function copyArtifactFolderList() {
 }
 
 async function copyArtifactFolderCommand() {
-  const { artifacts, text, platformName } = buildArtifactFolderCommandText();
+  const commands = buildArtifactFolderCommands();
+  const { artifacts } = commands;
   if (!artifacts.length) {
     setActionStatus('artifactFolderStatus', '当前权限范围内暂无成果，无法复制建目录命令。', true);
     setStatus('当前权限范围内暂无成果，无法复制建目录命令。', true);
     return;
   }
 
-  showArtifactFolderCommand(text, platformName);
-  const copied = await writeTextToClipboard(text);
+  const preferredKind = getClientPlatformKind();
+  const preferredText = preferredKind === 'windows' ? commands.windowsText : commands.unixText;
+  const preferredName = preferredKind === 'windows' ? 'Windows PowerShell' : 'macOS/Linux 终端';
+  showArtifactFolderCommands(commands, preferredKind);
+  const copied = await writeTextToClipboard(preferredText);
   const msg = copied
-    ? `建目录命令已复制：共 ${artifacts.length} 个成果文件夹。请打开 ${platformName}，粘贴后回车，会在桌面自动生成素材目录结构。`
-    : `建目录命令已生成：共 ${artifacts.length} 个成果文件夹。请在下方命令框手动复制，再粘贴到 ${platformName} 回车。`;
+    ? `建目录命令已生成，并已复制 ${preferredName} 命令：共 ${artifacts.length} 个成果文件夹。粘贴后回车，会在桌面自动生成素材目录结构。`
+    : `建目录命令已生成：共 ${artifacts.length} 个成果文件夹。请在下方选择对应系统命令，手动复制后粘贴运行。`;
   setActionStatus('artifactFolderStatus', msg);
   setStatus(msg);
+}
+
+async function copyVisibleArtifactFolderCommand(kind) {
+  const textarea = byId(kind === 'windows' ? 'artifactFolderCommandWindows' : 'artifactFolderCommandUnix');
+  const platformName = kind === 'windows' ? 'Windows PowerShell' : 'macOS/Linux 终端';
+  const text = String(textarea?.value || '');
+  if (!textarea || !text.trim()) {
+    setActionStatus('artifactFolderStatus', '请先点击“生成建目录命令（推荐）”。', true);
+    setStatus('请先生成建目录命令。', true);
+    return;
+  }
+
+  textarea.focus();
+  textarea.select();
+  const copied = await writeTextToClipboard(text);
+  const msg = copied
+    ? `${platformName} 命令已复制。请粘贴后回车，会在桌面自动生成素材目录结构。`
+    : `${platformName} 命令已选中。浏览器未允许自动复制，请按 Ctrl/Cmd + C 手动复制。`;
+  setActionStatus('artifactFolderStatus', msg, !copied);
+  setStatus(msg, !copied);
 }
 
 async function downloadArtifactFolderZip(downloadUrl, fileName) {
@@ -1921,6 +1954,10 @@ function bindArtifactFolderExportAction() {
   if (exportBtn) exportBtn.addEventListener('click', exportArtifactFolders);
   const commandBtn = byId('copyArtifactFolderCommand');
   if (commandBtn) commandBtn.addEventListener('click', copyArtifactFolderCommand);
+  const copyWindowsBtn = byId('copyWindowsFolderCommand');
+  if (copyWindowsBtn) copyWindowsBtn.addEventListener('click', () => copyVisibleArtifactFolderCommand('windows'));
+  const copyUnixBtn = byId('copyUnixFolderCommand');
+  if (copyUnixBtn) copyUnixBtn.addEventListener('click', () => copyVisibleArtifactFolderCommand('unix'));
   const copyBtn = byId('copyArtifactFolderList');
   if (copyBtn) copyBtn.addEventListener('click', copyArtifactFolderList);
 }

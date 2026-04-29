@@ -166,13 +166,40 @@ textarea {
   margin-bottom: 8px;
 }
 
-.command-box textarea {
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.command-panel {
+  border: 1px solid #dbe8f3;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+}
+
+.command-panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.command-panel textarea {
   width: 100%;
   min-height: 220px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
   white-space: pre;
+}
+
+.btn-small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .btn {
