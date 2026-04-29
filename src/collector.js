@@ -341,6 +341,22 @@ function setActionStatus(id, text, isWarn = false) {
   el.className = isWarn ? 'action-status warn' : 'action-status';
 }
 
+function setActionStatusWithLink(id, text, linkText, href, isWarn = false) {
+  const el = byId(id);
+  if (!el) return;
+  el.textContent = '';
+  el.className = isWarn ? 'action-status warn' : 'action-status';
+  el.append(document.createTextNode(text));
+  if (href) {
+    const link = document.createElement('a');
+    link.href = href;
+    link.textContent = linkText;
+    link.download = '';
+    link.style.marginLeft = '8px';
+    el.appendChild(link);
+  }
+}
+
 function setButtonBusy(buttonId, busyText, fn) {
   const btn = byId(buttonId);
   const oldText = btn.textContent;
@@ -1736,6 +1752,34 @@ async function copyArtifactFolderList() {
   setStatus(msg);
 }
 
+async function downloadArtifactFolderZip(downloadUrl, fileName) {
+  const resp = await fetch(downloadUrl, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store'
+  });
+  if (!resp.ok) {
+    throw new Error(`下载文件失败：HTTP ${resp.status}`);
+  }
+  const blob = await resp.blob();
+  if (!blob.size) {
+    throw new Error('下载文件为空，请重新导出。');
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = fileName || `artifact_folders_template_${Date.now()}.zip`;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+    link.remove();
+  }, 30000);
+}
+
 async function exportArtifactFolders() {
   setActionStatus('artifactFolderStatus', '正在生成目录结构模板，请稍候...');
   setStatus('正在生成目录结构模板，请稍候...');
@@ -1752,10 +1796,15 @@ async function exportArtifactFolders() {
       if (!prepare.downloadUrl) {
         throw new Error('服务器未返回下载地址，请重试。');
       }
-      window.location.href = prepare.downloadUrl;
+      await downloadArtifactFolderZip(prepare.downloadUrl, prepare.fileName);
 
       const msg = `目录结构模板已开始下载：预计包含 ${prepare.count || artifacts.length} 个成果文件夹。若浏览器询问，请选择保存。`;
-      setActionStatus('artifactFolderStatus', msg);
+      setActionStatusWithLink(
+        'artifactFolderStatus',
+        `${msg} 如果没有自动下载，`,
+        '请点这里直接下载。',
+        prepare.downloadUrl
+      );
       setStatus(msg);
     } catch (error) {
       setActionStatus('artifactFolderStatus', `目录结构模板导出失败：${error.message}`, true);
