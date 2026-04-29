@@ -1556,26 +1556,32 @@ async function uploadCoverFile() {
 
 async function uploadMediaFile() {
   const file = byId('media_file').files?.[0];
-  if ((byId('media_type')?.value || '') === 'html') {
-    setActionStatus('mediaUploadStatus', '互动网页不支持本地上传，请直接填写网页链接。', true);
-    setStatus('互动网页不支持本地上传，请直接填写网页链接。', true);
-    return;
-  }
   if (!file) {
-    setActionStatus('mediaUploadStatus', '请先选择素材文件（图片、视频或PDF）。', true);
-    setStatus('请先选择素材文件（图片、视频或PDF）', true);
+    setActionStatus('mediaUploadStatus', '请先选择素材文件（图片、视频、PDF或单个互动网页）。', true);
+    setStatus('请先选择素材文件（图片、视频、PDF或单个互动网页）', true);
     return;
   }
+  const isHtmlFile = /(?:^|[/\\])index\.html?$/i.test(file.name || '') || String(file.type || '').toLowerCase() === 'text/html';
   setActionStatus('mediaUploadStatus', '正在上传素材文件，请稍候...');
   setStatus('正在上传素材文件，请稍候...');
   await setButtonBusy('uploadMediaBtn', '正在上传...', async () => {
     try {
-      const result = await uploadLocalFile(file, { publicId: `media_${Date.now()}` });
+      const result = isHtmlFile
+        ? await uploadHtmlFolder([file], { rootName: '' })
+        : await uploadLocalFile(file, { publicId: `media_${Date.now()}` });
       byId('media_url').value = result.url;
       byId('media_type').value = result.mediaType;
       syncMediaTypeUi();
-      if ((result.mediaType === 'image' || result.mediaType === 'video') && result.thumbnailUrl && !byId('thumbnail_url').value.trim()) {
+      if ((result.mediaType === 'image' || result.mediaType === 'video' || result.mediaType === 'html') && result.thumbnailUrl && !byId('thumbnail_url').value.trim()) {
         byId('thumbnail_url').value = result.thumbnailUrl;
+      }
+      if (result.mediaType === 'html') {
+        const msg = result.thumbnailUrl
+          ? '互动网页上传成功，已自动生成首页截图并填入封面图链接。'
+          : '互动网页上传成功，已填入素材链接。若网页有配套 css/js/assets，建议改用目录一键导入。';
+        setActionStatus('mediaUploadStatus', msg);
+        setStatus(msg);
+        return;
       }
       if (result.mediaType === 'video' && !byId('thumbnail_url').value.trim()) {
         setActionStatus('mediaUploadStatus', '视频上传成功，已填入素材链接。建议再补一张视频缩略图链接。');
@@ -2407,15 +2413,15 @@ function syncMediaTypeUi() {
   if (!uploadBtn || !uploadStatus || !mediaUrl || !thumb || !mediaUrlReq) return;
 
   if (mediaType === 'html') {
-    uploadBtn.disabled = true;
+    uploadBtn.disabled = !CONFIG.assetUpload?.enabled || !isLocalUploadMode();
     mediaUrlReq.textContent = '*';
     mediaUrl.placeholder = allowExternalHtmlUrl()
       ? 'https://example.com/demo 或 /uploads/.../index.html'
       : '/uploads/.../index.html';
     thumb.placeholder = '可选：网页封面图链接（https://... 或 /uploads/...）';
     uploadStatus.textContent = allowExternalHtmlUrl()
-      ? '互动网页请直接填写可访问链接（支持内网路径和 http/https 外链）。'
-      : '互动网页请直接填写站内路径（如 /uploads/.../index.html）。';
+      ? '互动网页可填写链接，也可上传单个 index.html/index.htm；如有 css/js/assets，请使用目录一键导入。'
+      : '互动网页可上传单个 index.html/index.htm；如有 css/js/assets，请使用目录一键导入。';
     return;
   }
 

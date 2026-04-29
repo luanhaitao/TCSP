@@ -44,6 +44,7 @@ const ARTIFACT_TEMPLATE_CN_HEADERS = [
 ];
 
 const MIME = {
+  '.htm': 'text/html; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -622,6 +623,11 @@ function detectMediaType(filename, mime) {
   return '';
 }
 
+function isHtmlEntryFilename(filename) {
+  const base = path.basename(String(filename || '')).toLowerCase();
+  return base === 'index.html' || base === 'index.htm';
+}
+
 function normalizeUploadedRelativePath(filename) {
   const raw = String(filename || '').replace(/\\/g, '/').replace(/^\/+/, '');
   const parts = raw.split('/').filter(Boolean);
@@ -873,7 +879,10 @@ async function handleUploadHtmlFolder(req, res) {
     let hasIndex = false;
     let totalBytes = 0;
     for (const part of fileParts) {
-      const relPath = normalizeUploadedRelativePath(part.filename);
+      let relPath = normalizeUploadedRelativePath(part.filename);
+      if (safeParts.length === 0 && fileParts.length === 1 && isHtmlEntryFilename(relPath)) {
+        relPath = 'index.html';
+      }
       if (relPath === 'index.html') hasIndex = true;
       safeParts.push({ ...part, relPath });
       totalBytes += part.content.length;

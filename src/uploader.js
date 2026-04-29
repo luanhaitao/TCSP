@@ -146,6 +146,7 @@ async function uploadHtmlFolderToLocal(files, cfg, extra = {}) {
   return {
     url: json.url,
     mediaType: json.mediaType || 'html',
+    thumbnailUrl: json.thumbnailUrl || '',
     originalFilename: json.entry || 'index.html',
     bytes: json.bytes || totalBytes,
     fileCount: json.fileCount || fileList.length

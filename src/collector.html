@@ -242,13 +242,13 @@
           </label>
           <label>素材URL <span id="mediaUrlReq" class="req">*</span><input id="media_url" placeholder="https://... 或 /uploads/.../index.html" /></label>
           <div class="full-row">
-            <label>本地素材上传（图片/视频/PDF）
+            <label>本地素材上传（图片/视频/PDF/单个互动网页）
               <div class="inline upload-inline">
-                <input id="media_file" type="file" accept="image/*,video/*,.pdf,application/pdf" />
+                <input id="media_file" type="file" accept="image/*,video/*,.pdf,application/pdf,.html,.htm,text/html" />
                 <button id="uploadMediaBtn" type="button">上传并填入素材链接</button>
               </div>
             </label>
-            <p id="mediaUploadStatus" class="action-status">上传后会自动填入“素材URL”和素材类型。</p>
+            <p id="mediaUploadStatus" class="action-status">上传后会自动填入“素材URL”和素材类型；互动网页如含多个文件，建议使用目录一键导入。</p>
           </div>
           <label>封面图URL（视频/网页可选）<input id="thumbnail_url" placeholder="https://... 或 /uploads/.../cover.jpg" /></label>
           <div class="full-row">
