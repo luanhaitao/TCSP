@@ -1705,7 +1705,35 @@ function safeFolderPartForClient(text, fallback = '未命名成果') {
 }
 
 async function writeTextToClipboard(text) {
-  await writeTextToClipboard(text);
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand('copy');
+    textarea.remove();
+    return ok;
+  }
+}
+
+function showArtifactFolderCommand(text, platformName) {
+  const box = byId('artifactFolderCommandBox');
+  const textarea = byId('artifactFolderCommandText');
+  const hint = byId('artifactFolderCommandHint');
+  if (!box || !textarea) return;
+  box.classList.remove('is-hidden');
+  textarea.value = text;
+  textarea.focus();
+  textarea.select();
+  if (hint) {
+    hint.textContent = `适用于 ${platformName}。如果没有自动复制，请按 Ctrl/Cmd + C 手动复制。`;
+  }
 }
 
 function buildArtifactFolderListText() {
@@ -1804,21 +1832,11 @@ async function copyArtifactFolderList() {
     return;
   }
 
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    document.execCommand('copy');
-    textarea.remove();
-  }
+  const copied = await writeTextToClipboard(text);
 
-  const msg = `目录清单已复制：共 ${artifacts.length} 个成果文件夹。若 ZIP 下载卡住，可按清单手动建文件夹。`;
+  const msg = copied
+    ? `目录清单已复制：共 ${artifacts.length} 个成果文件夹。若 ZIP 下载卡住，可按清单手动建文件夹。`
+    : `目录清单已生成：共 ${artifacts.length} 个成果文件夹。浏览器未允许自动复制，请手动复制。`;
   setActionStatus('artifactFolderStatus', msg);
   setStatus(msg);
 }
@@ -1831,8 +1849,11 @@ async function copyArtifactFolderCommand() {
     return;
   }
 
-  await writeTextToClipboard(text);
-  const msg = `建目录命令已复制：共 ${artifacts.length} 个成果文件夹。请打开 ${platformName}，粘贴后回车，会在桌面自动生成素材目录结构。`;
+  showArtifactFolderCommand(text, platformName);
+  const copied = await writeTextToClipboard(text);
+  const msg = copied
+    ? `建目录命令已复制：共 ${artifacts.length} 个成果文件夹。请打开 ${platformName}，粘贴后回车，会在桌面自动生成素材目录结构。`
+    : `建目录命令已生成：共 ${artifacts.length} 个成果文件夹。请在下方命令框手动复制，再粘贴到 ${platformName} 回车。`;
   setActionStatus('artifactFolderStatus', msg);
   setStatus(msg);
 }

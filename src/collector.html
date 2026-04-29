@@ -154,6 +154,13 @@
         </div>
         <p id="artifactSaveStatus" class="action-status">保存成功后会进入“草稿库”。</p>
         <p id="artifactFolderStatus" class="action-status">可按当前权限导出素材目录结构模板（总目录 + 成果子目录）。</p>
+        <div id="artifactFolderCommandBox" class="command-box is-hidden">
+          <div class="command-box-head">
+            <strong>建目录命令</strong>
+            <span id="artifactFolderCommandHint" class="small">如未自动复制，请手动全选复制后粘贴到终端或 PowerShell。</span>
+          </div>
+          <textarea id="artifactFolderCommandText" readonly></textarea>
+        </div>
       </section>
 
       <section id="tab-media" class="card panel">

@@ -150,6 +150,31 @@ textarea {
   flex-wrap: wrap;
 }
 
+.command-box {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7fcff;
+  padding: 10px;
+}
+
+.command-box-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.command-box textarea {
+  width: 100%;
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
 .btn {
   border: 0;
   border-radius: 999px;
