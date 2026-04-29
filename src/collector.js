@@ -900,6 +900,18 @@ function clearForm(prefix) {
   });
 }
 
+function resetArtifactFolderUi() {
+  const box = byId('artifactFolderCommandBox');
+  if (box) box.classList.add('is-hidden');
+  const windowsCommand = byId('artifactFolderCommandWindows');
+  if (windowsCommand) windowsCommand.value = '';
+  const unixCommand = byId('artifactFolderCommandUnix');
+  if (unixCommand) unixCommand.value = '';
+  const hint = byId('artifactFolderCommandHint');
+  if (hint) hint.textContent = '请选择与你电脑系统匹配的命令，复制后粘贴运行。';
+  setActionStatus('artifactFolderStatus', '可按当前权限导出素材目录结构模板（总目录 + 成果子目录）。');
+}
+
 function bindTabs() {
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -1378,6 +1390,7 @@ function bindClearActions() {
     byId('growth_evidence').value = '';
     byId('teacher_comment').value = '';
     byId('updated_at').value = '';
+    resetArtifactFolderUi();
     state.editing.artifacts = null;
     setStatus('成果表单已清空，可继续新增');
   });
