@@ -1704,6 +1704,10 @@ function safeFolderPartForClient(text, fallback = '未命名成果') {
   return normalized || fallback;
 }
 
+async function writeTextToClipboard(text) {
+  await writeTextToClipboard(text);
+}
+
 function buildArtifactFolderListText() {
   const artifacts = allArtifacts();
   const lines = [
@@ -1723,6 +1727,73 @@ function buildArtifactFolderListText() {
     lines.push(`${artifactId}_${safeFolderPartForClient(row.artifact_name || '')}`);
   });
   return { artifacts, text: `${lines.join('\n')}\n` };
+}
+
+function quotePowerShellSingle(text) {
+  return `'${String(text).replace(/'/g, "''")}'`;
+}
+
+function quoteShellSingle(text) {
+  return `'${String(text).replace(/'/g, "'\\''")}'`;
+}
+
+function buildArtifactFolderCommandText() {
+  const artifacts = allArtifacts().filter((row) => String(row.artifact_id || '').trim());
+  const stamp = new Date();
+  const stampText = [
+    stamp.getFullYear(),
+    String(stamp.getMonth() + 1).padStart(2, '0'),
+    String(stamp.getDate()).padStart(2, '0'),
+    String(stamp.getHours()).padStart(2, '0'),
+    String(stamp.getMinutes()).padStart(2, '0')
+  ].join('');
+  const rootName = `素材目录结构_${stampText}`;
+  const note = [
+    '请将该成果的图片/视频/PDF/互动网页放在当前目录，然后在收集器里执行目录一键导入。',
+    '互动网页成果请把 index.html 放在当前目录根部，css/js/assets 等资源可放在子目录。'
+  ].join('\n');
+  const folderNames = artifacts.map((row) => (
+    `${String(row.artifact_id || '').trim()}_${safeFolderPartForClient(row.artifact_name || '')}`
+  ));
+  const platform = String(navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
+  const isWindows = platform.includes('win');
+
+  if (isWindows) {
+    const lines = [
+      '# 使用方法：打开 Windows PowerShell，粘贴本段命令后回车。',
+      `$root = Join-Path ([Environment]::GetFolderPath('Desktop')) ${quotePowerShellSingle(rootName)}`,
+      'New-Item -ItemType Directory -Force -Path $root | Out-Null',
+      "$note = @'",
+      note,
+      "'@",
+      '$dirs = @(',
+      ...folderNames.map((name) => `  ${quotePowerShellSingle(name)}`),
+      ')',
+      'foreach ($dir in $dirs) {',
+      '  $path = Join-Path $root $dir',
+      '  New-Item -ItemType Directory -Force -Path $path | Out-Null',
+      "  Set-Content -LiteralPath (Join-Path $path '请将素材放在此目录.txt') -Value $note -Encoding UTF8",
+      '}',
+      'Write-Host "已生成素材目录：" $root'
+    ];
+    return { artifacts, text: `${lines.join('\n')}\n`, platformName: 'Windows PowerShell' };
+  }
+
+  const lines = [
+    '# 使用方法：打开 macOS/Linux 终端，粘贴本段命令后回车。',
+    `root="$HOME/Desktop/${rootName}"`,
+    'mkdir -p "$root"',
+    `note=${quoteShellSingle(note)}`,
+    'while IFS= read -r dir; do',
+    '  path="$root/$dir"',
+    '  mkdir -p "$path"',
+    '  printf "%s\\n" "$note" > "$path/请将素材放在此目录.txt"',
+    "done <<'TCSP_DIRS'",
+    ...folderNames,
+    'TCSP_DIRS',
+    'echo "已生成素材目录：$root"'
+  ];
+  return { artifacts, text: `${lines.join('\n')}\n`, platformName: 'macOS/Linux 终端' };
 }
 
 async function copyArtifactFolderList() {
@@ -1748,6 +1819,20 @@ async function copyArtifactFolderList() {
   }
 
   const msg = `目录清单已复制：共 ${artifacts.length} 个成果文件夹。若 ZIP 下载卡住，可按清单手动建文件夹。`;
+  setActionStatus('artifactFolderStatus', msg);
+  setStatus(msg);
+}
+
+async function copyArtifactFolderCommand() {
+  const { artifacts, text, platformName } = buildArtifactFolderCommandText();
+  if (!artifacts.length) {
+    setActionStatus('artifactFolderStatus', '当前权限范围内暂无成果，无法复制建目录命令。', true);
+    setStatus('当前权限范围内暂无成果，无法复制建目录命令。', true);
+    return;
+  }
+
+  await writeTextToClipboard(text);
+  const msg = `建目录命令已复制：共 ${artifacts.length} 个成果文件夹。请打开 ${platformName}，粘贴后回车，会在桌面自动生成素材目录结构。`;
   setActionStatus('artifactFolderStatus', msg);
   setStatus(msg);
 }
@@ -1813,6 +1898,8 @@ async function exportArtifactFolders() {
 function bindArtifactFolderExportAction() {
   const exportBtn = byId('exportArtifactFolders');
   if (exportBtn) exportBtn.addEventListener('click', exportArtifactFolders);
+  const commandBtn = byId('copyArtifactFolderCommand');
+  if (commandBtn) commandBtn.addEventListener('click', copyArtifactFolderCommand);
   const copyBtn = byId('copyArtifactFolderList');
   if (copyBtn) copyBtn.addEventListener('click', copyArtifactFolderList);
 }
