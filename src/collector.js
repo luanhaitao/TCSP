@@ -1766,18 +1766,15 @@ async function downloadArtifactFolderZip(downloadUrl, fileName) {
     throw new Error('下载文件为空，请重新导出。');
   }
 
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = fileName || `artifact_folders_template_${Date.now()}.zip`;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
+  const expectedSize = Number(resp.headers.get('content-length') || 0);
+  if (expectedSize && blob.size !== expectedSize) {
+    throw new Error(`下载文件不完整：已收到 ${blob.size} 字节，应为 ${expectedSize} 字节。`);
+  }
 
-  window.setTimeout(() => {
-    URL.revokeObjectURL(objectUrl);
-    link.remove();
-  }, 30000);
+  const zipBlob = blob.type === 'application/zip'
+    ? blob
+    : new Blob([blob], { type: 'application/zip' });
+  downloadBlob(fileName || `artifact_folders_template_${Date.now()}.zip`, zipBlob);
 }
 
 async function exportArtifactFolders() {

@@ -1386,8 +1386,9 @@ async function handleArtifactFoldersExport(req, res) {
     res.writeHead(200, {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${downloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
-      'Cache-Control': 'no-store',
+      'Cache-Control': 'no-store, no-transform',
       'Content-Length': zipBuffer.length,
+      'Connection': 'close',
       'X-Artifact-Folder-Count': String(artifacts.length),
       ...corsHeaders()
     });
@@ -1441,8 +1442,11 @@ async function serveStatic(req, res, pathname) {
     }
     if (safePath.startsWith('/uploads/generated-downloads/') && ext === '.zip') {
       const filename = path.basename(target);
-      headers['Cache-Control'] = 'no-store';
+      headers['Cache-Control'] = 'no-store, no-transform';
       headers['Content-Disposition'] = `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+      headers['Connection'] = 'close';
+      headers['Accept-Ranges'] = 'none';
+      headers['X-Content-Type-Options'] = 'nosniff';
     }
     res.writeHead(200, headers);
     res.end(content);
