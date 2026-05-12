@@ -22,6 +22,9 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
 const ALLOW_EXTERNAL_HTML_URL = process.env.TCSP_ALLOW_EXTERNAL_HTML_URL !== 'false';
 const sessions = new Map();
 const artifactFolderExportJobs = new Map();
+let publishQueue = Promise.resolve();
+const PUBLISH_LOCK_STALE_MS = 2 * 60 * 1000;
+const PUBLISH_LOCK_WAIT_MS = 90 * 1000;
 
 const CLUB_HEADERS = [
   'club_id', 'club_name', 'teacher', 'grade_range', 'student_count', 'club_category', 'intro',
@@ -225,12 +228,105 @@ function normalizeIncomingIds(existingRows, incomingRows, headers, idKey, prefix
 }
 
 function isSameArtifactRecord(existing, incoming) {
-  return String(existing.club_id || '').trim() === String(incoming.club_id || '').trim();
+  const sameClub = String(existing.club_id || '').trim() === String(incoming.club_id || '').trim();
+  const sameName = String(existing.artifact_name || '').trim()
+    && String(existing.artifact_name || '').trim() === String(incoming.artifact_name || '').trim();
+  const sameStudent = String(existing.student_alias || '').trim()
+    && String(existing.student_alias || '').trim() === String(incoming.student_alias || '').trim();
+  return sameClub && (sameName || sameStudent);
+}
+
+function isSameClubRecord(existing, incoming) {
+  const existingName = String(existing.club_name || '').trim();
+  const incomingName = String(incoming.club_name || '').trim();
+  const existingTeacher = String(existing.teacher || '').trim();
+  const incomingTeacher = String(incoming.teacher || '').trim();
+  if (existingName || incomingName) {
+    return Boolean(existingName && incomingName && existingName === incomingName);
+  }
+  if (existingTeacher || incomingTeacher) {
+    return Boolean(existingTeacher && incomingTeacher && existingTeacher === incomingTeacher);
+  }
+  return false;
 }
 
 function isSameMediaRecord(existing, incoming) {
-  return String(existing.owner_type || '').trim() === String(incoming.owner_type || '').trim()
+  const sameOwner = String(existing.owner_type || '').trim() === String(incoming.owner_type || '').trim()
     && String(existing.owner_id || '').trim() === String(incoming.owner_id || '').trim();
+  const sameUrl = String(existing.url || '').trim()
+    && String(existing.url || '').trim() === String(incoming.url || '').trim();
+  const sameNotes = String(existing.notes || '').trim()
+    && String(existing.notes || '').trim() === String(incoming.notes || '').trim();
+  return sameOwner && (sameUrl || sameNotes);
+}
+
+function mapToObject(map) {
+  return Object.fromEntries([...map.entries()]);
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function writeFileAtomic(filePath, content, encoding = 'utf8') {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const tmpPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  await fs.writeFile(tmpPath, content, encoding);
+  await fs.rename(tmpPath, filePath);
+}
+
+async function withPublishFileLock(fn) {
+  await ensureRuntimeDirs();
+  const lockPath = path.join(BACKUP_DIR, '.publish.lock');
+  const startedAt = Date.now();
+  let handle = null;
+  while (!handle) {
+    try {
+      handle = await fs.open(lockPath, 'wx');
+      await handle.writeFile(JSON.stringify({
+        pid: process.pid,
+        created_at: new Date().toISOString()
+      }, null, 2), 'utf8');
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      try {
+        const stat = await fs.stat(lockPath);
+        if (Date.now() - stat.mtimeMs > PUBLISH_LOCK_STALE_MS) {
+          await fs.unlink(lockPath);
+          continue;
+        }
+      } catch (statError) {
+        if (statError?.code !== 'ENOENT') throw statError;
+      }
+      if (Date.now() - startedAt > PUBLISH_LOCK_WAIT_MS) {
+        throw new Error('发布队列繁忙：等待其它发布完成超时，请稍后重试。');
+      }
+      await sleep(100);
+    }
+  }
+
+  try {
+    return await fn();
+  } finally {
+    try {
+      await handle?.close();
+    } catch {
+      // ignore cleanup failures
+    }
+    try {
+      await fs.unlink(lockPath);
+    } catch {
+      // ignore cleanup failures
+    }
+  }
+}
+
+function enqueuePublish(work) {
+  const run = publishQueue.catch(() => {}).then(work);
+  publishQueue = run.catch(() => {});
+  return run;
 }
 
 async function backupBeforeWrite() {
@@ -1086,12 +1182,9 @@ async function ensureHtmlMediaThumbnails(rows) {
   return { rows: nextRows, generated };
 }
 
-async function handlePublish(req, res) {
+async function handlePublishLocked(req, res, session, body) {
   try {
-    const session = getSession(req);
-    if (!session) return unauthorized(res);
     await ensureRuntimeDirs();
-    const body = await parseJsonBody(req);
 
     const clubs = Array.isArray(body.clubs) ? body.clubs : [];
     const artifacts = Array.isArray(body.artifacts) ? body.artifacts : [];
@@ -1117,6 +1210,32 @@ async function handlePublish(req, res) {
     if (!scoped.clubs.length && !scoped.artifacts.length && !scoped.media.length && !deleteClubIds.length && !deleteArtifactIds.length && !deleteMediaIds.length) {
       const blockedTotal = scoped.blocked.clubs + scoped.blocked.artifacts + scoped.blocked.media;
       return forbidden(res, blockedTotal > 0 ? `发布失败：无可发布数据，已拦截 ${blockedTotal} 条越权草稿。` : '发布失败：当前账号无可发布数据。');
+    }
+    const clubIdNormalization = normalizeIncomingIds(
+      existingClubs,
+      scoped.clubs,
+      CLUB_HEADERS,
+      'club_id',
+      'C',
+      isSameClubRecord
+    );
+    scoped.clubs = clubIdNormalization.rows;
+    if (clubIdNormalization.idMap.size) {
+      scoped.artifacts = scoped.artifacts.map((row) => {
+        const clubId = String(row.club_id || '').trim();
+        if (clubIdNormalization.idMap.has(clubId)) {
+          return { ...row, club_id: clubIdNormalization.idMap.get(clubId) };
+        }
+        return row;
+      });
+      scoped.media = scoped.media.map((row) => {
+        const ownerType = String(row.owner_type || '').trim();
+        const ownerId = String(row.owner_id || '').trim();
+        if (ownerType === 'club' && clubIdNormalization.idMap.has(ownerId)) {
+          return { ...row, owner_id: clubIdNormalization.idMap.get(ownerId) };
+        }
+        return row;
+      });
     }
     const artifactIdNormalization = normalizeIncomingIds(
       existingArtifacts,
@@ -1250,9 +1369,9 @@ async function handlePublish(req, res) {
     const htmlThumbnailResult = await ensureHtmlMediaThumbnails(mergedMedia);
     mergedMedia = htmlThumbnailResult.rows;
 
-    await fs.writeFile(clubFile, toCsv(CLUB_HEADERS, mergedClubs), 'utf8');
-    await fs.writeFile(artifactFile, toCsv(ARTIFACT_HEADERS, mergedArtifacts), 'utf8');
-    await fs.writeFile(mediaFile, toCsv(MEDIA_HEADERS, mergedMedia), 'utf8');
+    await writeFileAtomic(clubFile, toCsv(CLUB_HEADERS, mergedClubs), 'utf8');
+    await writeFileAtomic(artifactFile, toCsv(ARTIFACT_HEADERS, mergedArtifacts), 'utf8');
+    await writeFileAtomic(mediaFile, toCsv(MEDIA_HEADERS, mergedMedia), 'utf8');
 
     return json(res, 200, {
       ok: true,
@@ -1271,8 +1390,12 @@ async function handlePublish(req, res) {
         delete_blocked_clubs: blockedClubDelete,
         delete_blocked_artifacts: blockedArtifactDelete,
         delete_blocked_media: blockedMediaDelete,
+        club_ids_reassigned: clubIdNormalization.reassigned,
         artifact_ids_reassigned: artifactIdNormalization.reassigned,
         media_ids_reassigned: mediaIdNormalization.reassigned,
+        club_id_map: mapToObject(clubIdNormalization.idMap),
+        artifact_id_map: mapToObject(artifactIdNormalization.idMap),
+        media_id_map: mapToObject(mediaIdNormalization.idMap),
         clubs_total: mergedClubs.length,
         artifacts_total: mergedArtifacts.length,
         media_total: mergedMedia.length
@@ -1281,6 +1404,18 @@ async function handlePublish(req, res) {
   } catch (error) {
     return json(res, 500, { ok: false, message: `发布失败：${error.message}` });
   }
+}
+
+async function handlePublish(req, res) {
+  const session = getSession(req);
+  if (!session) return unauthorized(res);
+  let body;
+  try {
+    body = await parseJsonBody(req);
+  } catch (error) {
+    return json(res, 400, { ok: false, message: `发布失败：请求数据无法解析。${error.message}` });
+  }
+  return enqueuePublish(() => withPublishFileLock(() => handlePublishLocked(req, res, session, body)));
 }
 
 async function handleAuthLogin(req, res) {

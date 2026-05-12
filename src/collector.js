@@ -1542,8 +1542,8 @@ async function publishDrafts() {
       ((result.stats?.html_thumbnails_generated ?? 0) > 0
         ? `（已自动补网页封面 ${result.stats.html_thumbnails_generated} 张）`
         : '') +
-      ((result.stats?.artifact_ids_reassigned ?? 0) > 0 || (result.stats?.media_ids_reassigned ?? 0) > 0
-        ? `（已自动避免ID重复：成果 ${result.stats?.artifact_ids_reassigned ?? 0} 条，素材 ${result.stats?.media_ids_reassigned ?? 0} 条）`
+      ((result.stats?.club_ids_reassigned ?? 0) > 0 || (result.stats?.artifact_ids_reassigned ?? 0) > 0 || (result.stats?.media_ids_reassigned ?? 0) > 0
+        ? `（已自动避免ID重复：社团 ${result.stats?.club_ids_reassigned ?? 0} 条，成果 ${result.stats?.artifact_ids_reassigned ?? 0} 条，素材 ${result.stats?.media_ids_reassigned ?? 0} 条）`
         : '')
     );
     setStatus(
