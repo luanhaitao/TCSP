@@ -199,6 +199,7 @@ function normalizeIncomingIds(existingRows, incomingRows, headers, idKey, prefix
   const seenIncoming = new Set();
   const nextId = createNextPrefixedId(existingClean, incomingClean, idKey, prefix);
   let reassigned = 0;
+  const idMap = new Map();
 
   const rows = incomingClean.map((row) => {
     const currentId = String(row[idKey] || '').trim();
@@ -213,13 +214,14 @@ function normalizeIncomingIds(existingRows, incomingRows, headers, idKey, prefix
     }
 
     row[idKey] = nextId(usedIds);
+    if (currentId) idMap.set(currentId, row[idKey]);
     usedIds.add(row[idKey]);
     seenIncoming.add(row[idKey]);
     reassigned += 1;
     return row;
   });
 
-  return { rows, reassigned };
+  return { rows, reassigned, idMap };
 }
 
 function isSameArtifactRecord(existing, incoming) {
@@ -1125,6 +1127,16 @@ async function handlePublish(req, res) {
       isSameArtifactRecord
     );
     scoped.artifacts = artifactIdNormalization.rows;
+    if (artifactIdNormalization.idMap.size) {
+      scoped.media = scoped.media.map((row) => {
+        const ownerType = String(row.owner_type || '').trim();
+        const ownerId = String(row.owner_id || '').trim();
+        if (ownerType === 'artifact' && artifactIdNormalization.idMap.has(ownerId)) {
+          return { ...row, owner_id: artifactIdNormalization.idMap.get(ownerId) };
+        }
+        return row;
+      });
+    }
     const mediaIdNormalization = normalizeIncomingIds(
       existingMedia,
       scoped.media,
