@@ -171,6 +171,66 @@ function upsertById(existingRows, incomingRows, idKey, headers) {
   return order.map((id) => existingMap.get(id)).filter(Boolean);
 }
 
+function parsePrefixedIdNumber(raw, prefix) {
+  const match = String(raw || '').trim().match(new RegExp(`^${prefix}(\\d+)$`, 'i'));
+  return match ? Number(match[1]) : 0;
+}
+
+function createNextPrefixedId(existingRows, incomingRows, idKey, prefix) {
+  const maxId = [...existingRows, ...incomingRows].reduce((max, row) => {
+    return Math.max(max, parsePrefixedIdNumber(row?.[idKey], prefix));
+  }, 0);
+  let current = maxId;
+  return (usedIds) => {
+    let next = '';
+    do {
+      current += 1;
+      next = `${prefix}${String(current).padStart(3, '0')}`;
+    } while (usedIds.has(next));
+    return next;
+  };
+}
+
+function normalizeIncomingIds(existingRows, incomingRows, headers, idKey, prefix, isSameRecord) {
+  const existingClean = sanitizeRows(existingRows, headers);
+  const incomingClean = sanitizeRows(incomingRows, headers);
+  const existingById = new Map(existingClean.map((row) => [String(row[idKey] || '').trim(), row]).filter(([id]) => id));
+  const usedIds = new Set(existingById.keys());
+  const seenIncoming = new Set();
+  const nextId = createNextPrefixedId(existingClean, incomingClean, idKey, prefix);
+  let reassigned = 0;
+
+  const rows = incomingClean.map((row) => {
+    const currentId = String(row[idKey] || '').trim();
+    const existing = existingById.get(currentId);
+    const canKeepId = currentId
+      && !seenIncoming.has(currentId)
+      && (!existing || isSameRecord(existing, row));
+
+    if (canKeepId) {
+      seenIncoming.add(currentId);
+      return row;
+    }
+
+    row[idKey] = nextId(usedIds);
+    usedIds.add(row[idKey]);
+    seenIncoming.add(row[idKey]);
+    reassigned += 1;
+    return row;
+  });
+
+  return { rows, reassigned };
+}
+
+function isSameArtifactRecord(existing, incoming) {
+  return String(existing.club_id || '').trim() === String(incoming.club_id || '').trim();
+}
+
+function isSameMediaRecord(existing, incoming) {
+  return String(existing.owner_type || '').trim() === String(incoming.owner_type || '').trim()
+    && String(existing.owner_id || '').trim() === String(incoming.owner_id || '').trim();
+}
+
 async function backupBeforeWrite() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const dir = path.join(BACKUP_DIR, 'auto_publish', ts);
@@ -1056,6 +1116,25 @@ async function handlePublish(req, res) {
       const blockedTotal = scoped.blocked.clubs + scoped.blocked.artifacts + scoped.blocked.media;
       return forbidden(res, blockedTotal > 0 ? `发布失败：无可发布数据，已拦截 ${blockedTotal} 条越权草稿。` : '发布失败：当前账号无可发布数据。');
     }
+    const artifactIdNormalization = normalizeIncomingIds(
+      existingArtifacts,
+      scoped.artifacts,
+      ARTIFACT_HEADERS,
+      'artifact_id',
+      'A',
+      isSameArtifactRecord
+    );
+    scoped.artifacts = artifactIdNormalization.rows;
+    const mediaIdNormalization = normalizeIncomingIds(
+      existingMedia,
+      scoped.media,
+      MEDIA_HEADERS,
+      'media_id',
+      'M',
+      isSameMediaRecord
+    );
+    scoped.media = mediaIdNormalization.rows;
+
     const mediaIssues = validateIncomingMediaRows(scoped.media);
     if (mediaIssues.length) {
       const firstFew = mediaIssues.slice(0, 3).join('；');
@@ -1180,6 +1259,8 @@ async function handlePublish(req, res) {
         delete_blocked_clubs: blockedClubDelete,
         delete_blocked_artifacts: blockedArtifactDelete,
         delete_blocked_media: blockedMediaDelete,
+        artifact_ids_reassigned: artifactIdNormalization.reassigned,
+        media_ids_reassigned: mediaIdNormalization.reassigned,
         clubs_total: mergedClubs.length,
         artifacts_total: mergedArtifacts.length,
         media_total: mergedMedia.length
