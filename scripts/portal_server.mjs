@@ -1034,11 +1034,12 @@ async function handlePublish(req, res) {
     const clubs = Array.isArray(body.clubs) ? body.clubs : [];
     const artifacts = Array.isArray(body.artifacts) ? body.artifacts : [];
     const media = Array.isArray(body.media) ? body.media : [];
+    const deleteClubIds = Array.isArray(body.delete_club_ids) ? body.delete_club_ids.map((v) => String(v || '').trim()).filter(Boolean) : [];
     const deleteArtifactIds = Array.isArray(body.delete_artifact_ids) ? body.delete_artifact_ids.map((v) => String(v || '').trim()).filter(Boolean) : [];
     const deleteMediaIds = Array.isArray(body.delete_media_ids) ? body.delete_media_ids.map((v) => String(v || '').trim()).filter(Boolean) : [];
-    const adminFullSync = isAdminSession(session) && body?.full_sync === true;
+    const adminFullSync = isAdminSession(session) && body?.full_sync === true && body?.replace_all_tables === true;
 
-    if (!clubs.length && !artifacts.length && !media.length) {
+    if (!clubs.length && !artifacts.length && !media.length && !deleteClubIds.length && !deleteArtifactIds.length && !deleteMediaIds.length) {
       return json(res, 400, { ok: false, message: '草稿为空，暂无可发布数据。' });
     }
 
@@ -1051,7 +1052,7 @@ async function handlePublish(req, res) {
     const existingMedia = await readCsvFile(mediaFile);
 
     const scoped = scopeFilterIncomingDrafts(session, { clubs, artifacts, media }, existingArtifacts);
-    if (!scoped.clubs.length && !scoped.artifacts.length && !scoped.media.length) {
+    if (!scoped.clubs.length && !scoped.artifacts.length && !scoped.media.length && !deleteClubIds.length && !deleteArtifactIds.length && !deleteMediaIds.length) {
       const blockedTotal = scoped.blocked.clubs + scoped.blocked.artifacts + scoped.blocked.media;
       return forbidden(res, blockedTotal > 0 ? `发布失败：无可发布数据，已拦截 ${blockedTotal} 条越权草稿。` : '发布失败：当前账号无可发布数据。');
     }
@@ -1066,7 +1067,7 @@ async function handlePublish(req, res) {
 
     const backupDir = await backupBeforeWrite();
 
-    const mergedClubs = adminFullSync
+    let mergedClubs = adminFullSync
       ? sanitizeRows(scoped.clubs, CLUB_HEADERS)
       : (scoped.clubs.length ? upsertById(existingClubs, scoped.clubs, 'club_id', CLUB_HEADERS) : existingClubs);
     let mergedArtifacts = adminFullSync
@@ -1078,18 +1079,43 @@ async function handlePublish(req, res) {
 
     let artifactsDeleted = 0;
     let mediaDeleted = 0;
+    let clubsDeleted = 0;
+    let blockedClubDelete = 0;
     let blockedArtifactDelete = 0;
     let blockedMediaDelete = 0;
-    if (!adminFullSync && (deleteArtifactIds.length || deleteMediaIds.length)) {
+    if (!adminFullSync && (deleteClubIds.length || deleteArtifactIds.length || deleteMediaIds.length)) {
       const teacherClubSet = new Set((session.clubIds || []).map((v) => String(v)));
+      const allowedDeleteClubIdSet = new Set();
+      if (isAdminSession(session)) {
+        for (const cid of deleteClubIds) {
+          if (mergedClubs.some((row) => String(row.club_id || '').trim() === cid)) allowedDeleteClubIdSet.add(cid);
+        }
+      } else {
+        blockedClubDelete += deleteClubIds.length;
+      }
+      if (allowedDeleteClubIdSet.size) {
+        const beforeClubs = mergedClubs.length;
+        mergedClubs = mergedClubs.filter((r) => !allowedDeleteClubIdSet.has(String(r.club_id || '').trim()));
+        clubsDeleted += beforeClubs - mergedClubs.length;
+      }
+
       const mergedArtifactMap = new Map(mergedArtifacts.map((r) => [String(r.artifact_id || '').trim(), r]));
       const allowedDeleteArtifactIdSet = new Set();
       for (const aid of deleteArtifactIds) {
         const row = mergedArtifactMap.get(aid);
-        if (row && teacherClubSet.has(String(row.club_id || '').trim())) {
+        const rowClubId = String(row?.club_id || '').trim();
+        if (row && (isAdminSession(session) || teacherClubSet.has(rowClubId))) {
           allowedDeleteArtifactIdSet.add(aid);
         } else {
           blockedArtifactDelete += 1;
+        }
+      }
+      if (allowedDeleteClubIdSet.size) {
+        for (const row of mergedArtifacts) {
+          const aid = String(row.artifact_id || '').trim();
+          if (aid && allowedDeleteClubIdSet.has(String(row.club_id || '').trim())) {
+            allowedDeleteArtifactIdSet.add(aid);
+          }
         }
       }
       if (allowedDeleteArtifactIdSet.size) {
@@ -1105,7 +1131,8 @@ async function handlePublish(req, res) {
         if (!row) continue;
         const ownerType = String(row.owner_type || '').trim();
         const ownerId = String(row.owner_id || '').trim();
-        const allowed = (ownerType === 'club' && teacherClubSet.has(ownerId))
+        const allowed = isAdminSession(session)
+          || (ownerType === 'club' && teacherClubSet.has(ownerId))
           || (ownerType === 'artifact' && (mergedArtifactIdSetAfterDelete.has(ownerId) || allowedDeleteArtifactIdSet.has(ownerId)));
         if (allowed) allowedDeleteMediaIdSet.add(mid);
         else blockedMediaDelete += 1;
@@ -1121,6 +1148,7 @@ async function handlePublish(req, res) {
         mergedMedia = mergedMedia.filter((r) => {
           const ownerType = String(r.owner_type || '').trim();
           const ownerId = String(r.owner_id || '').trim();
+          if (ownerType === 'club' && allowedDeleteClubIdSet.has(ownerId)) return false;
           if (ownerType === 'artifact' && allowedDeleteArtifactIdSet.has(ownerId)) return false;
           return true;
         });
@@ -1145,9 +1173,11 @@ async function handlePublish(req, res) {
         clubs_published: scoped.clubs.length,
         artifacts_published: scoped.artifacts.length,
         media_published: scoped.media.length,
+        clubs_deleted: clubsDeleted,
         artifacts_deleted: artifactsDeleted,
         media_deleted: mediaDeleted,
         html_thumbnails_generated: htmlThumbnailResult.generated,
+        delete_blocked_clubs: blockedClubDelete,
         delete_blocked_artifacts: blockedArtifactDelete,
         delete_blocked_media: blockedMediaDelete,
         clubs_total: mergedClubs.length,

@@ -312,19 +312,25 @@ function bindAuthActions() {
 function loadDrafts() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { clubs: [], artifacts: [], media: [] };
+    if (!raw) return { clubs: [], artifacts: [], media: [], deleted: { clubs: [], artifacts: [], media: [] } };
     const parsed = JSON.parse(raw);
     return {
       clubs: Array.isArray(parsed.clubs) ? parsed.clubs : [],
       artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
-      media: Array.isArray(parsed.media) ? parsed.media : []
+      media: Array.isArray(parsed.media) ? parsed.media : [],
+      deleted: {
+        clubs: Array.isArray(parsed.deleted?.clubs) ? parsed.deleted.clubs : [],
+        artifacts: Array.isArray(parsed.deleted?.artifacts) ? parsed.deleted.artifacts : [],
+        media: Array.isArray(parsed.deleted?.media) ? parsed.deleted.media : []
+      }
     };
   } catch {
-    return { clubs: [], artifacts: [], media: [] };
+    return { clubs: [], artifacts: [], media: [], deleted: { clubs: [], artifacts: [], media: [] } };
   }
 }
 
 function saveDrafts() {
+  ensureDeletedDrafts();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.drafts));
 }
 
@@ -672,13 +678,37 @@ function allMedia() {
   return order.map((id) => map.get(id)).filter(Boolean);
 }
 
+function ensureDeletedDrafts() {
+  if (!state.drafts.deleted || typeof state.drafts.deleted !== 'object') {
+    state.drafts.deleted = { clubs: [], artifacts: [], media: [] };
+  }
+  ['clubs', 'artifacts', 'media'].forEach((key) => {
+    if (!Array.isArray(state.drafts.deleted[key])) state.drafts.deleted[key] = [];
+  });
+  return state.drafts.deleted;
+}
+
+function rememberDeletedDraft(type, row) {
+  const idKeyMap = { clubs: 'club_id', artifacts: 'artifact_id', media: 'media_id' };
+  const baseMap = { clubs: state.base.clubs, artifacts: state.base.artifacts, media: state.base.media };
+  const idKey = idKeyMap[type];
+  const id = String(row?.[idKey] || '').trim();
+  if (!id) return;
+  const existedInBase = (baseMap[type] || []).some((item) => String(item?.[idKey] || '').trim() === id);
+  if (!existedInBase) return;
+  const deleted = ensureDeletedDrafts();
+  if (!deleted[type].includes(id)) deleted[type].push(id);
+}
+
 function hasAnyDraft() {
   return state.drafts.clubs.length > 0 || state.drafts.artifacts.length > 0 || state.drafts.media.length > 0;
 }
 
 function applyDraftScopeByBase() {
+  ensureDeletedDrafts();
   const clubSet = new Set((state.base.clubs || []).map((c) => String(c.club_id || '').trim()).filter(Boolean));
   const baseArtifactSet = new Set((state.base.artifacts || []).map((a) => String(a.artifact_id || '').trim()).filter(Boolean));
+  const baseMediaSet = new Set((state.base.media || []).map((m) => String(m.media_id || '').trim()).filter(Boolean));
 
   state.drafts.clubs = state.drafts.clubs.filter((row) => clubSet.has(String(row.club_id || '').trim()));
   state.drafts.artifacts = state.drafts.artifacts.filter((row) => clubSet.has(String(row.club_id || '').trim()));
@@ -692,6 +722,9 @@ function applyDraftScopeByBase() {
     if (ownerType === 'artifact') return allowedArtifactSet.has(ownerId);
     return false;
   });
+  state.drafts.deleted.clubs = state.drafts.deleted.clubs.filter((id) => clubSet.has(String(id)));
+  state.drafts.deleted.artifacts = state.drafts.deleted.artifacts.filter((id) => baseArtifactSet.has(String(id)));
+  state.drafts.deleted.media = state.drafts.deleted.media.filter((id) => baseMediaSet.has(String(id)));
 }
 
 function buildClubNameCountMap(clubs) {
@@ -851,7 +884,10 @@ function renderTable(containerId, headers, rows, type) {
 
   container.querySelectorAll('button[data-del]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const list = state.drafts[btn.dataset.del];
+      const type = btn.dataset.del;
+      const list = state.drafts[type];
+      const row = list[Number(btn.dataset.idx)];
+      rememberDeletedDraft(type, row);
       list.splice(Number(btn.dataset.idx), 1);
       saveDrafts();
       renderDrafts();
@@ -961,9 +997,11 @@ function upsertClubDraft(row) {
   const idx = state.drafts.clubs.findIndex((item) => item.club_id === row.club_id);
   if (idx === -1) {
     state.drafts.clubs.push(row);
+    ensureDeletedDrafts().clubs = ensureDeletedDrafts().clubs.filter((id) => id !== row.club_id);
     return 'insert';
   }
   state.drafts.clubs[idx] = row;
+  ensureDeletedDrafts().clubs = ensureDeletedDrafts().clubs.filter((id) => id !== row.club_id);
   return 'update';
 }
 
@@ -1248,6 +1286,7 @@ function bindSaves() {
       setActionStatus('clubSaveStatus', `社团信息保存成功：${row.club_name}`);
       setStatus(`社团信息已保存：${row.club_name}`);
     }
+    ensureDeletedDrafts().clubs = ensureDeletedDrafts().clubs.filter((id) => id !== row.club_id);
     saveDrafts();
     renderDrafts();
     refreshSelectOptions();
@@ -1292,6 +1331,7 @@ function bindSaves() {
       setActionStatus('artifactSaveStatus', `成果信息保存成功：${row.artifact_name}`);
       setStatus(`成果信息已保存：${row.artifact_name}`);
     }
+    ensureDeletedDrafts().artifacts = ensureDeletedDrafts().artifacts.filter((id) => id !== row.artifact_id);
     saveDrafts();
     renderDrafts();
     refreshSelectOptions();
@@ -1367,6 +1407,7 @@ function bindSaves() {
       setActionStatus('mediaSaveStatus', `素材信息保存成功：${row.media_id}`);
       setStatus(`素材信息已保存：${row.media_id}`);
     }
+    ensureDeletedDrafts().media = ensureDeletedDrafts().media.filter((id) => id !== row.media_id);
     saveDrafts();
     renderDrafts();
     refreshSelectOptions();
@@ -1410,7 +1451,7 @@ function bindClearActions() {
 
   byId('clearDrafts').addEventListener('click', () => {
     if (!window.confirm('确认清空全部草稿吗？此操作不可撤销。')) return;
-    state.drafts = { clubs: [], artifacts: [], media: [] };
+    state.drafts = { clubs: [], artifacts: [], media: [], deleted: { clubs: [], artifacts: [], media: [] } };
     state.editing = { clubs: null, artifacts: null, media: null };
     saveDrafts();
     renderDrafts();
@@ -1420,17 +1461,12 @@ function bindClearActions() {
 }
 
 function computeTeacherDeletePayload() {
-  const baseArtifactIds = new Set((state.base.artifacts || []).map((r) => String(r.artifact_id || '').trim()).filter(Boolean));
-  const draftArtifactIds = new Set((state.drafts.artifacts || []).map((r) => String(r.artifact_id || '').trim()).filter(Boolean));
-  const deleteArtifactIds = [...baseArtifactIds].filter((id) => !draftArtifactIds.has(id));
-
-  const baseMediaIds = new Set((state.base.media || []).map((r) => String(r.media_id || '').trim()).filter(Boolean));
-  const draftMediaIds = new Set((state.drafts.media || []).map((r) => String(r.media_id || '').trim()).filter(Boolean));
-  const deleteMediaIds = [...baseMediaIds].filter((id) => !draftMediaIds.has(id));
+  const deleted = ensureDeletedDrafts();
 
   return {
-    delete_artifact_ids: deleteArtifactIds,
-    delete_media_ids: deleteMediaIds
+    delete_club_ids: state.auth.role === 'admin' ? [...new Set(deleted.clubs)] : [],
+    delete_artifact_ids: [...new Set(deleted.artifacts)],
+    delete_media_ids: [...new Set(deleted.media)]
   };
 }
 
@@ -1475,8 +1511,8 @@ async function publishDrafts() {
         artifacts,
         media,
         published_at: nowText(),
-        full_sync: state.auth.role === 'admin',
-        ...(state.auth.role === 'teacher' ? computeTeacherDeletePayload() : {})
+        full_sync: false,
+        ...computeTeacherDeletePayload()
       })
     });
 
@@ -1486,7 +1522,7 @@ async function publishDrafts() {
     }
 
     if (CONFIG.publish.clearDraftsAfterPublish) {
-      state.drafts = { clubs: [], artifacts: [], media: [] };
+      state.drafts = { clubs: [], artifacts: [], media: [], deleted: { clubs: [], artifacts: [], media: [] } };
       state.editing = { clubs: null, artifacts: null, media: null };
       saveDrafts();
       renderDrafts();
@@ -1658,7 +1694,8 @@ async function loadBaseData(forceSyncDrafts = false) {
       state.drafts = {
         clubs: [...raw.clubs],
         artifacts: [...raw.artifacts],
-        media: [...raw.media]
+        media: [...raw.media],
+        deleted: { clubs: [], artifacts: [], media: [] }
       };
     }
     saveDrafts();
