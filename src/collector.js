@@ -603,9 +603,11 @@ function isIgnorableSystemFile(file) {
   const rel = String(file?.webkitRelativePath || file?.name || '').replace(/\\/g, '/');
   const parts = rel.split('/').filter(Boolean);
   const fileName = String(file?.name || '').toLowerCase();
+  const originalFileName = String(file?.name || '').trim();
   if (!parts.length) return false;
   if (parts.some((p) => p === '__MACOSX')) return true;
   if (fileName === '.ds_store' || fileName === 'thumbs.db' || fileName === 'desktop.ini') return true;
+  if (originalFileName === '请将素材放在此目录.txt') return true;
   if (fileName.startsWith('._')) return true;
   return false;
 }
